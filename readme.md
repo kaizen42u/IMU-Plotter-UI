@@ -1,0 +1,1 @@
+Just clone this repo and run the `espGraphing.py` script.
