@@ -62,13 +62,13 @@ class SerialApp:
         self.terminal.grid(row=1, column=0, columnspan=3)
 
         # Create figures and a canvas to draw on
-        self.accelerometer_figure = tkPlotGraph(root=root, title="Acceleration (G)")
+        self.accelerometer_figure = tkPlotGraph(root=root, title="Acceleration (G) (z-axis)")
         self.accelerometer_figure.grid(row=2, column=0)
         self.accelerometer_figure.set_ylim(-4, 4)
 
-        self.gyroscope_figure = tkPlotGraph(root=root, title="Angular Velocity (DPS)")
+        self.gyroscope_figure = tkPlotGraph(root=root, title="Angular Velocity (DPS) (x-axis)")
         self.gyroscope_figure.grid(row=2, column=1)
-        self.gyroscope_figure.set_ylim(-2000, 2000)
+        self.gyroscope_figure.set_ylim(-3000, 3000)
 
         # self.delta_figure = tkPlotGraph(root=root, title="Delta Error")
         # self.delta_figure.grid(row=2, column=2)
@@ -100,7 +100,8 @@ class SerialApp:
         if self.read_serial_thread.is_alive():
             print("read_serial_thread did not exit in time")
 
-        print("Close terminal to exit the program.")
+        #! TODO: Fix draw_graphs_thread not exiting.
+        print("[W] Close terminal to exit the program.")
 
     def connect_toggle(self) -> None:
         # If already connected, disconnect
@@ -149,6 +150,7 @@ class SerialApp:
             time, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = match.groups()
             self.total_time = self.total_time + int(time)
             
+            #! TODO: Now try to add three data values in one graph
             self.accelerometer_figure.append(self.total_time, float(acc_z))
             self.gyroscope_figure.append(self.total_time, float(gyro_x))
             
