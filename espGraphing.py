@@ -11,7 +11,6 @@ import serial.tools.list_ports
 
 from ansiEncoding import ANSI
 
-# from tkAnsiFormatter import tkAnsiFormatter
 from tkPlotGraph import tkPlotGraph
 from tkTerminal import tkTerminal
 
@@ -62,17 +61,13 @@ class SerialApp:
         self.terminal.grid(row=1, column=0, columnspan=3)
 
         # Create figures and a canvas to draw on
-        self.accelerometer_figure = tkPlotGraph(root=root, title="Acceleration (G) (z-axis)")
+        self.accelerometer_figure = tkPlotGraph(root=root, title="Acceleration (G)")
         self.accelerometer_figure.grid(row=2, column=0)
         self.accelerometer_figure.set_ylim(-4, 4)
 
-        self.gyroscope_figure = tkPlotGraph(root=root, title="Angular Velocity (DPS) (x-axis)")
+        self.gyroscope_figure = tkPlotGraph(root=root, title="Angular Velocity (DPS)")
         self.gyroscope_figure.grid(row=2, column=1)
         self.gyroscope_figure.set_ylim(-3000, 3000)
-
-        # self.delta_figure = tkPlotGraph(root=root, title="Delta Error")
-        # self.delta_figure.grid(row=2, column=2)
-        # self.delta_figure.set_ylim(-10, 10)
 
         # Create threads to draw figures and serial port reading
         self.draw_graphs_thread = threading.Thread(target=self.draw_graphs)
@@ -149,19 +144,24 @@ class SerialApp:
         if match:
             time, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = match.groups()
             self.total_time = self.total_time + int(time)
-            
-            #! TODO: Now try to add three data values in one graph
-            self.accelerometer_figure.append_single(self.total_time, float(acc_z))
-            self.gyroscope_figure.append_single(self.total_time, float(gyro_x))
-            
-            # print(f"Time: {self.total_time} ms")
-            # print(f"Acceleration: x={acc_x} G, y={acc_y} G, z={acc_z} G")
-            # print(f"Gyroscope: x={gyro_x} DPS, y={gyro_y} DPS, z={gyro_z} DPS")
+
+            accelerometer_data = {
+                "x-axis": float(acc_x),
+                "y-axis": float(acc_y),
+                "z-axis": float(acc_z),
+            }
+            self.accelerometer_figure.append_dict(self.total_time, accelerometer_data)
+
+            gyroscope_data = {
+                "x-axis": float(gyro_x),
+                "y-axis": float(gyro_y),
+                "z-axis": float(gyro_z),
+            }
+            self.gyroscope_figure.append_dict(self.total_time, gyroscope_data)
 
     def reset_graphs(self) -> None:
         self.accelerometer_figure.clear()
         self.gyroscope_figure.clear()
-        # self.delta_figure.reset()
 
     def draw_graphs(self) -> None:
         while not self.killed:
@@ -171,7 +171,6 @@ class SerialApp:
             try:
                 self.accelerometer_figure.draw()
                 self.gyroscope_figure.draw()
-                # self.delta_figure.draw()
 
             except RuntimeError:
                 self.show_message(str(sys.exc_info()))
@@ -236,7 +235,7 @@ if __name__ == "__main__":
     tab2 = ttk.Frame(tabControl)
 
     tabControl.add(tab1, text="Main")
-    tabControl.add(tab2, text="dummy")
+    tabControl.add(tab2, text="Data Viewer (dummy)")
     tabControl.pack(expand=1, fill="both")
 
     app = SerialApp(tab1)

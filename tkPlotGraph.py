@@ -46,6 +46,7 @@ class tkPlotGraph:
 
     # Clears graph data
     def clear(self) -> None:
+        #! TODO: also clears legend
         self.data_series.clear()
         self.timestamp.clear()
         self.lines.clear()
