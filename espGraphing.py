@@ -151,16 +151,16 @@ class SerialApp:
             self.total_time = self.total_time + int(time)
             
             #! TODO: Now try to add three data values in one graph
-            self.accelerometer_figure.append(self.total_time, float(acc_z))
-            self.gyroscope_figure.append(self.total_time, float(gyro_x))
+            self.accelerometer_figure.append_single(self.total_time, float(acc_z))
+            self.gyroscope_figure.append_single(self.total_time, float(gyro_x))
             
             # print(f"Time: {self.total_time} ms")
             # print(f"Acceleration: x={acc_x} G, y={acc_y} G, z={acc_z} G")
             # print(f"Gyroscope: x={gyro_x} DPS, y={gyro_y} DPS, z={gyro_z} DPS")
 
     def reset_graphs(self) -> None:
-        self.accelerometer_figure.reset()
-        self.gyroscope_figure.reset()
+        self.accelerometer_figure.clear()
+        self.gyroscope_figure.clear()
         # self.delta_figure.reset()
 
     def draw_graphs(self) -> None:

@@ -1,9 +1,9 @@
-import queue
 from tkinter import Misc
 
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from collections import deque
 
 matplotlib.use("Agg")
 
@@ -26,13 +26,9 @@ class tkPlotGraph:
         self.title = title
 
         # Graph data
-        self.data = []
-        self.times = []
-        self.data_hash = hash(tuple(self.data))
-        self.do_ylim = False
-
-        # Holding the draw command for main loop to update the UI
-        self.draw_queue: queue.Queue[FigureCanvasTkAgg] = queue.Queue()
+        self.data_series: dict[str, deque[int | float]] = {}
+        self.timestamp: deque[int | float] = deque()
+        self.do_ylim: bool = False
 
         # Configure Axes object
         self.ax = self.figure.add_subplot(111)
@@ -40,48 +36,77 @@ class tkPlotGraph:
         if self.do_ylim:
             self.ax.set_ylim(self.low_ylim, self.high_ylim)
         self.ax.grid()
-        (self.line,) = self.ax.plot(self.times, self.data)
+
+        # Initialize line objects
+        self.lines = {}
 
     # Partial function of tk.grid()
-    def grid(self, row: int = 2, column: int = 0) -> None:
+    def grid(self, row: int = 0, column: int = 0) -> None:
         self.canvas.get_tk_widget().grid(row=row, column=column)
 
     # Clears graph data
-    def reset(self) -> None:
-        self.data.clear()
-        self.times.clear()
+    def clear(self) -> None:
+        self.data_series.clear()
+        self.timestamp.clear()
+        self.lines.clear()
 
     # Appends timestamp and data to the list, also clears old data
-    def append(self, time, data) -> None:
-        self.data.append(data)
-        self.times.append(time)
+    def append_dict(
+        self, timestamp: int | float, data_dict: dict[str, int | float]
+    ) -> None:
+        self.timestamp.append(timestamp)
+        for label, data in data_dict.items():
+            if label not in self.data_series:
+                self.data_series[label] = deque()
+                (self.lines[label],) = self.ax.plot([], [], label=label)
+            self.data_series[label].append(data)
 
-        # Remove data older than x milliseconds
-        while self.times and self.times[0] < time - self.timespan:
-            self.times.pop(0)
-            self.data.pop(0)
+        self.remove_old_data(timestamp)
+
+    # Appends timestamp and a list of data to the list, also clears old data
+    def append_list(self, timestamp: int | float, data_list: list[int | float]) -> None:
+        self.timestamp.append(timestamp)
+        for i, data in enumerate(data_list):
+            label = f"Series {i+1}"
+            if label not in self.data_series:
+                self.data_series[label] = deque()
+                (self.lines[label],) = self.ax.plot([], [], label=label)
+            self.data_series[label].append(data)
+
+        self.remove_old_data(timestamp)
+
+    # Appends timestamp and a single data point to the list, also clears old data
+    def append_single(self, timestamp: int | float, data: int | float) -> None:
+        self.timestamp.append(timestamp)
+        label = "Series 1"
+        if label not in self.data_series:
+            self.data_series[label] = deque()
+            (self.lines[label],) = self.ax.plot([], [], label=label)
+        self.data_series[label].append(data)
+
+        self.remove_old_data(timestamp)
+
+    # Remove data older than x milliseconds
+    def remove_old_data(self, timestamp: int | float) -> None:
+        while self.timestamp and self.timestamp[0] < timestamp - self.timespan:
+            self.timestamp.popleft()
+            for series in self.data_series.values():
+                series.popleft()
 
     # Set graph y-axis limit, default is automatic
-    def set_ylim(self, low: float, high: float):
+    def set_ylim(self, low: int | float, high: int | float):
         self.do_ylim = True
         self.low_ylim = low
         self.high_ylim = high
 
     # Draw graph on canvas
     def draw(self) -> None:
-
-        # Skips if no updates
-        new_hash = hash(tuple(self.data))
-        if self.data_hash is new_hash:
-            return
-        self.data_hash = new_hash
-
-        # Update the graph
-        self.line.set_data(self.times, self.data)
+        for label, series in self.data_series.items():
+            self.lines[label].set_data(self.timestamp, series)
 
         # Rescale the x-axis to fit the new data
-        if len(self.times) >= 2:
-            self.ax.set_xlim(self.times[0], self.times[-1])
+        if len(self.timestamp) >= 2:
+            self.ax.set_xlim(self.timestamp[0], self.timestamp[-1])
 
         # Rescale the y-axis to fit the new data
         if self.do_ylim:
@@ -90,26 +115,74 @@ class tkPlotGraph:
             self.ax.relim()
             self.ax.autoscale_view(scalex=False)
 
+        self.ax.legend()
         self.canvas.draw()
-        # self.draw_queue.put(self.canvas)
 
-    # Take data from the queue and update the UI
-    def update_ui(self) -> None:
-        if self.killed:
-            return
 
-        # while not self.draw_queue.empty():
-        #     canvas = self.draw_queue.get()
-        #     canvas.draw()
+def main():
+    from tkinter import Tk
+    import random
+    import time
 
-        # Schedule the next update, roughly 100 ms
-        self.root.after(100, self.update_ui)
+    root = Tk()
 
-    # This function should only be called on main loop, once
-    def start(self) -> None:
-        self.killed = False
-        self.update_ui()
+    figure1 = tkPlotGraph(root=root, title="Test Append Dict")
+    figure1.grid(row=0, column=0)
+    figure1.set_ylim(-4, 4)
 
-    # This function should only be called on main loop, once
-    def stop(self) -> None:
-        self.killed = True
+    figure2 = tkPlotGraph(root=root, title="Test Append List")
+    figure2.grid(row=0, column=1)
+    figure2.set_ylim(-4, 4)
+
+    figure3 = tkPlotGraph(root=root, title="Test Append Single")
+    figure3.grid(row=0, column=2)
+    figure3.set_ylim(-4, 4)
+
+    start_time = time.time()
+
+    def update_figure_data():
+        update_figure1_data()
+        update_figure2_data()
+        update_figure3_data()
+        draw_figures()
+        root.after(100, update_figure_data)
+
+    def draw_figures():
+        figure1.draw()
+        figure2.draw()
+        figure3.draw()
+
+    def update_figure1_data():
+        current_time = time.time()  # Current time in milliseconds
+        time_since_start_ms = (current_time - start_time) * 1000
+        data = {
+            "Series 1": random.uniform(-3, 3),
+            "Series 2": random.uniform(-3, 3),
+            "Series 3": random.uniform(-3, 3),
+        }
+        figure1.append_dict(time_since_start_ms, data)
+
+    def update_figure2_data():
+        current_time = time.time()  # Current time in milliseconds
+        time_since_start_ms = (current_time - start_time) * 1000
+        data = [
+            random.uniform(-3, 3),
+            random.uniform(-3, 3),
+            random.uniform(-3, 3),
+        ]
+        figure2.append_list(time_since_start_ms, data)
+
+    def update_figure3_data():
+        current_time = time.time()  # Current time in milliseconds
+        time_since_start_ms = (current_time - start_time) * 1000
+        data = random.uniform(-3, 3)
+        figure3.append_single(time_since_start_ms, data)
+
+    update_figure_data()
+    draw_figures()
+    root.mainloop()
+
+
+# Example usage
+if __name__ == "__main__":
+    main()
