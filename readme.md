@@ -44,7 +44,6 @@ Graphs IMU acceleration and angular velocity
 
 ## Todo List
 - Add .csv output
-- Add x, y, z axis graph support
 - Improve performance
 
 ## Contributing

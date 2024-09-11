@@ -50,6 +50,9 @@ class tkPlotGraph:
         self.data_series.clear()
         self.timestamp.clear()
         self.lines.clear()
+        self.ax.clear()  # Clear the axes
+        self.ax.set_title(self.title)  # Reset the title
+        self.ax.grid()  # Reset the grid
 
     # Appends timestamp and data to the list, also clears old data
     def append_dict(
@@ -87,11 +90,6 @@ class tkPlotGraph:
 
         self.remove_old_data(timestamp)
 
-    def legend_without_duplicate_labels(self):
-        handles, labels = self.ax.get_legend_handles_labels()
-        unique = [(h, l) for i, (h, l) in enumerate(zip(handles, labels)) if l not in labels[:i]]
-        self.ax.legend(*zip(*unique))
-
     # Remove data older than x milliseconds
     def remove_old_data(self, timestamp: int | float) -> None:
         while self.timestamp and self.timestamp[0] < timestamp - self.timespan:
@@ -121,8 +119,7 @@ class tkPlotGraph:
             self.ax.relim()
             self.ax.autoscale_view(scalex=False)
 
-        self.legend_without_duplicate_labels()
-        # self.ax.legend()
+        self.ax.legend()
         self.canvas.draw()
 
 
