@@ -119,7 +119,8 @@ class tkPlotGraph:
             self.ax.relim()
             self.ax.autoscale_view(scalex=False)
 
-        self.ax.legend()
+        if self.data_series:
+            self.ax.legend()
         self.canvas.draw()
 
 

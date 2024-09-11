@@ -221,6 +221,7 @@ class SerialApp:
 def on_closing():
     print("Exiting")
     app.close()
+    root.quit()  # This will exit the main loop
     root.destroy()
 
 
