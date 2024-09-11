@@ -1,6 +1,7 @@
 from tkinter import Misc
 
 import matplotlib
+from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import deque
@@ -46,7 +47,6 @@ class tkPlotGraph:
 
     # Clears graph data
     def clear(self) -> None:
-        #! TODO: also clears legend
         self.data_series.clear()
         self.timestamp.clear()
         self.lines.clear()
@@ -87,6 +87,11 @@ class tkPlotGraph:
 
         self.remove_old_data(timestamp)
 
+    def legend_without_duplicate_labels(self):
+        handles, labels = self.ax.get_legend_handles_labels()
+        unique = [(h, l) for i, (h, l) in enumerate(zip(handles, labels)) if l not in labels[:i]]
+        self.ax.legend(*zip(*unique))
+
     # Remove data older than x milliseconds
     def remove_old_data(self, timestamp: int | float) -> None:
         while self.timestamp and self.timestamp[0] < timestamp - self.timespan:
@@ -116,7 +121,8 @@ class tkPlotGraph:
             self.ax.relim()
             self.ax.autoscale_view(scalex=False)
 
-        self.ax.legend()
+        self.legend_without_duplicate_labels()
+        # self.ax.legend()
         self.canvas.draw()
 
 
