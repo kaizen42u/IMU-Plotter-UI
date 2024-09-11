@@ -13,7 +13,7 @@ This project reads COM port data and parses the output for graphing the IMU acce
    git clone https://github.com/kaizen42u/IMU-Plotter-UI
    ```
 
-2. (Optional) Create a virtual environment:
+2. Create a virtual environment:
     ```bash
     python -m venv .venv
     ```
