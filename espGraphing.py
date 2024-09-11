@@ -181,37 +181,42 @@ class SerialApp:
         print("Graphing thread exited")
 
     def read_from_port(self) -> None:
-        while not self.killed:
-            sleep(0.05)
+        try:
+            while not self.killed:
+                sleep(0.05)
 
-            # Reads serial port data by line
-            while self.serial_port and self.serial_port.is_open:
-                try:
-                    line = self.serial_port.readline()
+                # Reads serial port data by line
+                while self.serial_port and self.serial_port.is_open:
+                    try:
+                        line = self.serial_port.readline()
 
-                    # Check if line is not empty
-                    if not line:
-                        break
+                        # Check if line is not empty
+                        if not line:
+                            break
 
-                    reading = line.decode("utf-8")
-                    self.update_graphs(reading)
-                    self.terminal.write(reading)
+                        reading = line.decode("utf-8")
+                        self.update_graphs(reading)
+                        self.terminal.write(reading)
 
-                except serial.SerialException as serr:
-                    self.disconnect_serial()
-                    self.show_message(
-                        f"Could not read port [{self.port_var.get()}]: {serr}"
-                    )
+                    except serial.SerialException as serr:
+                        self.disconnect_serial()
+                        self.show_message(
+                            f"Could not read port [{self.port_var.get()}]: {serr}"
+                        )
 
-                except TypeError as terr:
-                    self.show_message(
-                        f"Bad serial data for port [{self.port_var.get()}]: {terr}"
-                    )
+                    except TypeError as terr:
+                        self.show_message(
+                            f"Bad serial data for port [{self.port_var.get()}]: {terr}"
+                        )
 
-                except Exception as err:
-                    self.show_message(f"Serial Exception: {err}")
+                    except Exception as err:
+                        self.show_message(f"Serial Exception: {err}")
 
-        print("Serial Port thread exiting")
+            print("Serial Port thread exiting")
+        except Exception as err:
+            self.show_message(f"### Serial Port thread killed, trying to restart: {err} ###")
+            self.read_serial_thread = threading.Thread(target=self.read_from_port)
+            self.read_serial_thread.start()
 
     def show_message(self, msg: str) -> None:
         self.terminal.write(f"{ANSI.bBrightMagenta}{msg}{ANSI.default}\n")

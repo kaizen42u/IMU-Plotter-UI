@@ -16,7 +16,9 @@ class tkTerminal:
         self.scrollbar.grid(row=1, column=3, sticky="ns")
 
         # Create a text widget for the terminal
-        self.terminal = Text(root, width=width, yscrollcommand=self.scrollbar.set, background="#E7FCF6")
+        self.terminal = Text(
+            root, width=width, yscrollcommand=self.scrollbar.set, background="#E7FCF6"
+        )
         self.terminal.grid(row=1, column=0, columnspan=3)
         self.ansi_formatter = tkAnsiFormatter(self.terminal)
 
