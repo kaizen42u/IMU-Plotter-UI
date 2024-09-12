@@ -1,4 +1,4 @@
-from tkinter import END, Misc, Scrollbar, Text
+from tkinter import END, Frame, Misc, Scrollbar, Text
 
 from tkAnsiFormatter import tkAnsiFormatter
 
@@ -10,40 +10,44 @@ class tkTerminal:
 
         self.lines = lines
         self.autoscroll = autoscroll
-
-        # Create a scrollbar
-        self.scrollbar = Scrollbar(root)
-        self.scrollbar.grid(row=1, column=3, sticky="ns")
-
-        # Create a text widget for the terminal
-        self.terminal = Text(
-            root, width=width, yscrollcommand=self.scrollbar.set, background="#E7FCF6"
+        self.frame = Frame(root)
+        self.scrollbar = Scrollbar(self.frame)
+        self.textarea = Text(
+            self.frame,
+            width=width,
+            yscrollcommand=self.scrollbar.set,
+            background="#E7FCF6",
         )
-        self.terminal.grid(row=1, column=0, columnspan=3)
-        self.ansi_formatter = tkAnsiFormatter(self.terminal)
 
-        # Configure the scrollbar to scroll the text widget
-        self.scrollbar.config(command=self.terminal.yview)
+        # Place the Text widget and Scrollbar in the Frame
+        self.textarea.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
 
-    # Partial function of tk.grid()
-    def grid(self, row: int, column: int, columnspan: int) -> None:
-        self.scrollbar.grid(row=row, column=columnspan, sticky="ns")
-        self.terminal.grid(row=row, column=column, columnspan=columnspan)
+        # Configure the Frame to expand with the window
+        # self.frame.grid(row=0, column=0, sticky="nsew")
+        self.frame.grid_rowconfigure(0, weight=1)
+        self.frame.grid_columnconfigure(0, weight=1)
+
+        self.ansi_formatter = tkAnsiFormatter(self.textarea)
+        self.scrollbar.config(command=self.textarea.yview)
+
+    def grid(self, **kwargs):
+        self.frame.grid(**kwargs)
 
     # Writes text on screen
     def write(self, data: str) -> None:
         if self.ansi_formatter:
             self.ansi_formatter.insert_ansi(txt=data, index=END)
         else:
-            self.terminal.insert(chars=data, index=END)
+            self.textarea.insert(chars=data, index=END)
 
         # Scroll to the END
         if self.autoscroll:
-            self.terminal.see(index=END)
+            self.textarea.see(index=END)
 
         # Limit the number of lines in the terminal
-        if int(self.terminal.index("end-1c").split(".")[0]) > self.lines:
-            self.terminal.delete("1.0", "2.0")
+        if int(self.textarea.index("end-1c").split(".")[0]) > self.lines:
+            self.textarea.delete("1.0", "2.0")
 
     def set_autoscroll(self, autoscroll: bool) -> None:
         self.autoscroll = autoscroll

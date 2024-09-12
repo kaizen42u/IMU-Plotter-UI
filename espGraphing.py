@@ -3,7 +3,7 @@ import sys
 import threading
 import tkinter as tk
 from time import sleep
-from tkinter import Misc, ttk
+from tkinter import Misc, Text, ttk
 
 import matplotlib
 import serial
@@ -22,7 +22,6 @@ class SerialApp:
         self.root = root
         self.serial_port = None
         self.killed = False
-        self.auto_scroll = tk.BooleanVar(value=True)
         self.total_time = 0
 
         # Get a list of all available serial ports
@@ -43,6 +42,7 @@ class SerialApp:
         self.conn_button.grid(row=0, column=1)
 
         # Create auto scroll checkbox
+        self.auto_scroll = tk.BooleanVar(value=True)
         self.scroll_check = tk.Checkbutton(
             root,
             text="Auto Scroll",
@@ -52,13 +52,9 @@ class SerialApp:
         self.scroll_check.config(width=20)
         self.scroll_check.grid(row=0, column=2)
 
-        # Create a scrollbar
-        # scrollbar = tk.Scrollbar(root)
-        # scrollbar.grid(row=1, column=3, sticky="ns")
-
         # Create the terminal
         self.terminal = tkTerminal(root, width=180)
-        self.terminal.grid(row=1, column=0, columnspan=3)
+        self.terminal.frame.grid(row=1, column=0, columnspan=3)
 
         # Create figures and a canvas to draw on
         self.accelerometer_figure = tkPlotGraph(root=root, title="Acceleration (G)")
@@ -68,6 +64,12 @@ class SerialApp:
         self.gyroscope_figure = tkPlotGraph(root=root, title="Angular Velocity (DPS)")
         self.gyroscope_figure.grid(row=2, column=1)
         self.gyroscope_figure.set_ylim(-3000, 3000)
+
+        # Configure the grid to expand
+        root.grid_rowconfigure(1, weight=1)
+        root.grid_columnconfigure(0, weight=1)
+        root.grid_columnconfigure(1, weight=1)
+        root.grid_columnconfigure(2, weight=1)
 
         # Create threads to draw figures and serial port reading
         self.draw_graphs_thread = threading.Thread(target=self.draw_graphs)
@@ -214,7 +216,9 @@ class SerialApp:
 
             print("Serial Port thread exiting")
         except Exception as err:
-            self.show_message(f"### Serial Port thread killed, trying to restart: {err} ###")
+            self.show_message(
+                f"### Serial Port thread killed, trying to restart: {err} ###"
+            )
             self.read_serial_thread = threading.Thread(target=self.read_from_port)
             self.read_serial_thread.start()
 
