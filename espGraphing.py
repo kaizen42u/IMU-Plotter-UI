@@ -53,8 +53,8 @@ class SerialApp:
         self.scroll_check.grid(row=0, column=2)
 
         # Create a scrollbar
-        scrollbar = tk.Scrollbar(root)
-        scrollbar.grid(row=1, column=3, sticky="ns")
+        # scrollbar = tk.Scrollbar(root)
+        # scrollbar.grid(row=1, column=3, sticky="ns")
 
         # Create the terminal
         self.terminal = tkTerminal(root, width=180)
