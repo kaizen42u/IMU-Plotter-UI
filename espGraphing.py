@@ -3,7 +3,7 @@ import sys
 import threading
 import tkinter as tk
 from time import sleep
-from tkinter import Misc, Text, ttk
+from tkinter import Frame, Misc, Text, ttk
 import csv
 import os
 from datetime import datetime
@@ -14,6 +14,7 @@ import serial.tools.list_ports
 
 from ansiEncoding import ANSI
 
+from tkAutocompleteCombobox import tkAutocompleteCombobox
 from tkPlotGraph import tkPlotGraph
 from tkTerminal import tkTerminal
 
@@ -68,12 +69,30 @@ class SerialApp:
         self.gyroscope_figure.grid(row=2, column=1)
         self.gyroscope_figure.set_ylim(-3000, 3000)
 
+        self.save_option_frame = Frame(root)
+        self.save_option_frame.grid_rowconfigure(0, weight=1)
+        self.save_option_frame.grid_columnconfigure(0, weight=1)
+        self.save_option_frame.grid(row=2, column=2)
+
         # Create save to .csv button, this saves the graph data as csv
         # Save to: "savedata/gesture1/[datetime].csv", ..., "savedata/gesture1/[datetime].csv".
         # Format: Time, aX, aY, aZ, gX, gY, gZ
-        self.save_button = tk.Button(root, text="Save as .csv", command=self.save_csv)
-        self.save_button.config(width=20)
-        self.save_button.grid(row=2, column=2)
+        self.gesture_save_button = tk.Button(
+            self.save_option_frame, text="Save as .csv", command=self.save_csv
+        )
+        self.gesture_save_button.config(width=20)
+        self.gesture_save_button.grid(row=0, column=0)
+
+        self.gesture_selected_label = tk.Label(
+            self.save_option_frame, text="Selected Gesture:"
+        )
+        self.gesture_selected_label.grid(row=1, column=0, pady=20)
+
+        self.gesture_selected_combobox = tkAutocompleteCombobox(self.save_option_frame)
+        self.gesture_selected_combobox.set_completion_list(
+            ["idle"]
+        )  #! TODO: Read available gestures from /savedata/<files>  by default.
+        self.gesture_selected_combobox.grid(row=1, column=1, pady=20)
 
         # Configure the grid to expand
         root.grid_rowconfigure(1, weight=1)
@@ -112,9 +131,9 @@ class SerialApp:
 
     def save_csv(self) -> None:
         # Create directory if it doesn't exist
-        os.makedirs("savedata/gesture1", exist_ok=True)
+        os.makedirs(f"savedata/{self.gesture_selected_combobox.get()}", exist_ok=True)
         # Create a filename with the current datetime
-        filename = f"savedata/gesture1/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        filename = f"savedata/{self.gesture_selected_combobox.get()}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
         # Open the file for writing
         with open(filename, mode="w", newline="") as file:
@@ -127,7 +146,9 @@ class SerialApp:
             for i in range(total_samples):
                 writer.writerow(
                     [
-                        self.accelerometer_figure.timestamp[i], # It is save to use timestamp from one graph only 
+                        self.accelerometer_figure.timestamp[
+                            i
+                        ],  # It is save to use timestamp from one graph only
                         self.accelerometer_figure.data_series["x-axis"][i],
                         self.accelerometer_figure.data_series["y-axis"][i],
                         self.accelerometer_figure.data_series["z-axis"][i],
