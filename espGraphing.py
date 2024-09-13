@@ -4,6 +4,9 @@ import threading
 import tkinter as tk
 from time import sleep
 from tkinter import Misc, Text, ttk
+import csv
+import os
+from datetime import datetime
 
 import matplotlib
 import serial
@@ -65,6 +68,13 @@ class SerialApp:
         self.gyroscope_figure.grid(row=2, column=1)
         self.gyroscope_figure.set_ylim(-3000, 3000)
 
+        # Create save to .csv button, this saves the graph data as csv
+        # Save to: "savedata/gesture1/[datetime].csv", ..., "savedata/gesture1/[datetime].csv".
+        # Format: Time, aX, aY, aZ, gX, gY, gZ
+        self.save_button = tk.Button(root, text="Save as .csv", command=self.save_csv)
+        self.save_button.config(width=20)
+        self.save_button.grid(row=2, column=2)
+
         # Configure the grid to expand
         root.grid_rowconfigure(1, weight=1)
         root.grid_columnconfigure(0, weight=1)
@@ -99,6 +109,34 @@ class SerialApp:
 
         #! TODO: Fix draw_graphs_thread not exiting.
         print("[W] Close terminal to exit the program.")
+
+    def save_csv(self) -> None:
+        # Create directory if it doesn't exist
+        os.makedirs("savedata/gesture1", exist_ok=True)
+        # Create a filename with the current datetime
+        filename = f"savedata/gesture1/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        # Open the file for writing
+        with open(filename, mode="w", newline="") as file:
+            writer = csv.writer(file)
+            # Write the header
+            writer.writerow(["Time", "aX", "aY", "aZ", "gX", "gY", "gZ"])
+
+            # Write the data
+            total_samples = len(self.accelerometer_figure.timestamp)
+            for i in range(total_samples):
+                writer.writerow(
+                    [
+                        self.accelerometer_figure.timestamp[i], # It is save to use timestamp from one graph only 
+                        self.accelerometer_figure.data_series["x-axis"][i],
+                        self.accelerometer_figure.data_series["y-axis"][i],
+                        self.accelerometer_figure.data_series["z-axis"][i],
+                        self.gyroscope_figure.data_series["x-axis"][i],
+                        self.gyroscope_figure.data_series["y-axis"][i],
+                        self.gyroscope_figure.data_series["z-axis"][i],
+                    ]
+                )
+        self.show_message(f"Data saved to {filename}, {total_samples} samples")
 
     def connect_toggle(self) -> None:
         # If already connected, disconnect

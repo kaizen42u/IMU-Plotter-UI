@@ -40,10 +40,10 @@ python espGraphing.py
 ```
 
 ## Features
-Graphs IMU acceleration and angular velocity
+- Graphs IMU acceleration and angular velocity
+- Save as .csv
 
 ## Todo List
-- Add .csv output
 - Improve performance
 
 ## Contributing
