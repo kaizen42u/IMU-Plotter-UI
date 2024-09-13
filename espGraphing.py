@@ -61,11 +61,15 @@ class SerialApp:
         self.terminal.frame.grid(row=1, column=0, columnspan=3)
 
         # Create figures and a canvas to draw on
-        self.accelerometer_figure = tkPlotGraph(root=root, title="Acceleration (G)")
+        self.accelerometer_figure = tkPlotGraph(
+            root=root, title="Acceleration (G)", timespan=1000
+        )
         self.accelerometer_figure.grid(row=2, column=0)
         self.accelerometer_figure.set_ylim(-4, 4)
 
-        self.gyroscope_figure = tkPlotGraph(root=root, title="Angular Velocity (DPS)")
+        self.gyroscope_figure = tkPlotGraph(
+            root=root, title="Angular Velocity (DPS)", timespan=1000
+        )
         self.gyroscope_figure.grid(row=2, column=1)
         self.gyroscope_figure.set_ylim(-3000, 3000)
 
