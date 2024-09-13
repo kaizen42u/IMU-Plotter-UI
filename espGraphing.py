@@ -162,6 +162,7 @@ class SerialApp:
             self.gyroscope_figure.append_dict(self.total_time, gyroscope_data)
 
     def reset_graphs(self) -> None:
+        self.total_time = 0
         self.accelerometer_figure.clear()
         self.gyroscope_figure.clear()
 
