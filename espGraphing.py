@@ -3,7 +3,7 @@ import sys
 import threading
 import tkinter as tk
 from time import sleep
-from tkinter import Frame, Misc, Text, ttk
+from tkinter import Event, Frame, Misc, Text, ttk
 import csv
 import os
 from datetime import datetime
@@ -22,6 +22,7 @@ matplotlib.use("Agg")
 
 
 class SerialApp:
+
     def __init__(self, root: Misc) -> None:
         self.root = root
         self.serial_port = None
@@ -92,11 +93,19 @@ class SerialApp:
         )
         self.gesture_selected_label.grid(row=1, column=0, pady=20)
 
+        def show_gesture_selected(event: Event) -> None:
+            self.show_message(
+                f"Gesture selected: {ANSI.bCyan}{self.gesture_selected_combobox.get()}{ANSI.default}"
+            )
+
         self.gesture_selected_combobox = tkAutocompleteCombobox(self.save_option_frame)
         self.gesture_selected_combobox.set_completion_list(
             ["idle"]
         )  #! TODO: Read available gestures from /savedata/<files>  by default.
         self.gesture_selected_combobox.grid(row=1, column=1, pady=20)
+        self.gesture_selected_combobox.bind(
+            "<<ComboboxSelected>>", show_gesture_selected
+        )
 
         # Configure the grid to expand
         root.grid_rowconfigure(1, weight=1)
@@ -287,7 +296,7 @@ class SerialApp:
             self.read_serial_thread.start()
 
     def show_message(self, msg: str) -> None:
-        self.terminal.write(f"{ANSI.bBrightMagenta}{msg}{ANSI.default}\n")
+        self.terminal.write(f"{ANSI.bBrightMagenta}{msg}{ANSI.default} \n")
         print(msg)
 
 

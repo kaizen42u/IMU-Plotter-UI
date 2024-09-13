@@ -4,7 +4,7 @@ from tkinter import ttk
 
 # Custom Combobox class with autocomplete functionality
 class tkAutocompleteCombobox(ttk.Combobox):
-    def set_completion_list(self, completion_list: list[str]) -> None:
+    def update_completion_list(self, completion_list: list[str]) -> None:
         # Remove duplicates and sort the list
         self._completion_list = sorted(set(completion_list))
         self._hits = []
@@ -12,6 +12,9 @@ class tkAutocompleteCombobox(ttk.Combobox):
         self.position = 0
         self.bind("<KeyRelease>", self.handle_keyrelease)
         self["values"] = self._completion_list
+
+    def set_completion_list(self, completion_list: list[str]) -> None:
+        self.update_completion_list(completion_list)
 
         # Automatically select the first item in the list
         if self._completion_list:
@@ -40,7 +43,7 @@ class tkAutocompleteCombobox(ttk.Combobox):
 
     def select_item(self, item: str) -> None:
         self.set(item)
-        self.event_generate("<<ComboboxSelected>>")  # Notify main function
+        self.event_generate("<<ComboboxSelected>>", when="tail")  # Notify main function
 
     def handle_keyrelease(self, event):
         # Ignore certain keys
@@ -52,7 +55,7 @@ class tkAutocompleteCombobox(ttk.Combobox):
             new_item = self.get()
             if new_item not in self._completion_list:
                 self._completion_list.append(new_item)
-                self.set_completion_list(self._completion_list)
+                self.update_completion_list(self._completion_list)
             self.select_item(new_item)
 
         self.autocomplete()
