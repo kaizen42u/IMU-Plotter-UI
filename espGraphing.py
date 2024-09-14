@@ -98,10 +98,19 @@ class SerialApp:
                 f"Gesture selected: {ANSI.bCyan}{self.gesture_selected_combobox.get()}{ANSI.default}"
             )
 
+        def get_gesture_list():
+            folder_path = "./savedata"
+            if not os.path.exists(folder_path) or not os.listdir(folder_path):
+                return ["idle"]
+            else:
+                return [
+                    name
+                    for name in os.listdir(folder_path)
+                    if os.path.isdir(os.path.join(folder_path, name))
+                ]
+
         self.gesture_selected_combobox = tkAutocompleteCombobox(self.save_option_frame)
-        self.gesture_selected_combobox.set_completion_list(
-            ["idle"]
-        )  #! TODO: Read available gestures from /savedata/<files>  by default.
+        self.gesture_selected_combobox.set_completion_list(get_gesture_list())
         self.gesture_selected_combobox.grid(row=1, column=1, pady=20)
         self.gesture_selected_combobox.bind(
             "<<ComboboxSelected>>", show_gesture_selected
@@ -317,8 +326,8 @@ if __name__ == "__main__":
     tab1 = ttk.Frame(tabControl)
     tab2 = ttk.Frame(tabControl)
 
-    tabControl.add(tab1, text="Main")
-    tabControl.add(tab2, text="Data Viewer (dummy)")
+    tabControl.add(tab1, text="Serial Reader")
+    tabControl.add(tab2, text="Data Viewer")
     tabControl.pack(expand=1, fill="both")
 
     app = SerialApp(tab1)
