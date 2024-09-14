@@ -3,12 +3,13 @@ import sys
 import threading
 import tkinter as tk
 from time import sleep
-from tkinter import Event, Frame, Misc, Text, ttk
+from tkinter import Button, Canvas, Event, Frame, Label, Misc, Scrollbar, Text, ttk
 import csv
 import os
 from datetime import datetime
 
 import matplotlib
+import pandas as pd
 import serial
 import serial.tools.list_ports
 
@@ -19,6 +20,18 @@ from tkPlotGraph import tkPlotGraph
 from tkTerminal import tkTerminal
 
 matplotlib.use("Agg")
+
+
+def get_gesture_list() -> list[str]:
+    folder_path = "./savedata"
+    if not os.path.exists(folder_path) or not os.listdir(folder_path):
+        return ["idle"]
+    else:
+        return [
+            name
+            for name in os.listdir(folder_path)
+            if os.path.isdir(os.path.join(folder_path, name))
+        ]
 
 
 class SerialApp:
@@ -93,27 +106,18 @@ class SerialApp:
         )
         self.gesture_selected_label.grid(row=1, column=0, pady=20)
 
-        def show_gesture_selected(event: Event) -> None:
+        def gesture_select(event: Event) -> None:
+            # Create directory if it doesn't exist
+            os.makedirs(f"savedata/{self.gesture_selected_combobox.get()}", exist_ok=True)
             self.show_message(
                 f"Gesture selected: {ANSI.bCyan}{self.gesture_selected_combobox.get()}{ANSI.default}"
             )
-
-        def get_gesture_list():
-            folder_path = "./savedata"
-            if not os.path.exists(folder_path) or not os.listdir(folder_path):
-                return ["idle"]
-            else:
-                return [
-                    name
-                    for name in os.listdir(folder_path)
-                    if os.path.isdir(os.path.join(folder_path, name))
-                ]
 
         self.gesture_selected_combobox = tkAutocompleteCombobox(self.save_option_frame)
         self.gesture_selected_combobox.set_completion_list(get_gesture_list())
         self.gesture_selected_combobox.grid(row=1, column=1, pady=20)
         self.gesture_selected_combobox.bind(
-            "<<ComboboxSelected>>", show_gesture_selected
+            "<<ComboboxSelected>>", gesture_select
         )
 
         # Configure the grid to expand
@@ -309,9 +313,221 @@ class SerialApp:
         print(msg)
 
 
+class DataViewerApp:
+    def __init__(self, root: tk.Misc) -> None:
+        self.root = root
+        self.killed = False
+        self.gestures = get_gesture_list()
+        self.gesture_name_label: dict[str, Label] = {}
+        self.gesture_counts_label: dict[str, Label] = {}
+        self.gesture_selected_label: dict[str, Label] = {}
+        self.gesture_files: dict[str, list[str]] = {}
+        self.gesture_selected_samples_label: dict[str, Label] = {}
+        self.gesture_selected_combobox: dict[str, tkAutocompleteCombobox] = {}
+        self.accelerometer_figures: dict[str, tkPlotGraph] = {}
+        self.gyroscope_figures: dict[str, tkPlotGraph] = {}
+        self.old_selected_gestures: dict[str, str] = {}
+        self.row_offset = 4
+
+        self.setup_ui()
+        self.populate_tables()
+
+        self.update_thread = threading.Thread(target=self.update)
+        self.update_thread.start()
+
+    def update(self) -> None:
+        while not self.killed:
+            sleep(0.1)
+            self.update_contents()
+            
+            if len(self.gestures) != len(get_gesture_list()):
+                self = DataViewerApp(self.root)
+
+    def update_contents(self) -> None:
+        for gesture in self.gestures:
+            self.gesture_files[gesture] = self.get_gesture_files(gesture)
+            # print(f"{self.gesture_files[gesture] = }")
+            self.update_content(gesture)
+
+    def setup_ui(self) -> None:
+        # Create a canvas and a scrollbar
+        self.canvas = Canvas(self.root)
+        self.scrollbar = Scrollbar(
+            self.root, orient="vertical", command=self.canvas.yview
+        )
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+
+        # Create a frame inside the canvas
+        self.frame = Frame(self.canvas)
+        self.canvas.create_window((0, 0), window=self.frame, anchor="nw")
+
+        # Configure the grid to expand
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+
+        # Update the scroll region
+        self.frame.bind("<Configure>", self.on_frame_configure)
+
+    def close(self):
+        self.killed = True
+
+        self.update_thread.join(timeout=1)
+        if self.update_thread.is_alive():
+            print("update_thread did not exit in time")
+
+    def populate_tables(self) -> None:
+        for gesture in self.gestures:
+            self.gesture_files[gesture] = self.get_gesture_files(gesture)
+            self.populate_table(gesture)
+
+    def populate_table(self, gesture: str) -> None:
+        index = self.gestures.index(gesture)
+        print(f"{index = }, {gesture = }, {len(self.gesture_files[gesture]) = }")
+
+        self.gesture_name_label[gesture] = Label(self.frame, text=gesture)
+        self.gesture_name_label[gesture].grid(
+            row=index * self.row_offset, column=0, sticky="nsew"
+        )
+
+        self.gesture_counts_label[gesture] = Label(self.frame)
+        self.gesture_counts_label[gesture].grid(
+            row=index * self.row_offset, column=1, sticky="nsew"
+        )
+
+        self.gesture_selected_label[gesture] = Label(self.frame, text="Selected: ")
+        self.gesture_selected_label[gesture].grid(
+            row=index * self.row_offset + 1, column=0, sticky="nsew"
+        )
+
+        self.gesture_selected_combobox[gesture] = tkAutocompleteCombobox(self.frame, state="readonly")
+        self.gesture_selected_combobox[gesture].set_completion_list(
+            self.gesture_files[gesture]
+        )
+        self.gesture_selected_combobox[gesture].grid(
+            row=index * self.row_offset + 1, column=1
+        )
+
+        # Create figures and a canvas to draw on
+        self.accelerometer_figures[gesture] = tkPlotGraph(
+            root=self.frame, title="Acceleration (G)", timespan=1000
+        )
+        self.accelerometer_figures[gesture].grid(
+            row=index * self.row_offset, column=2, rowspan=self.row_offset
+        )
+        self.accelerometer_figures[gesture].set_ylim(-4, 4)
+
+        self.gyroscope_figures[gesture] = tkPlotGraph(
+            root=self.frame, title="Angular Velocity (DPS)", timespan=1000
+        )
+        self.gyroscope_figures[gesture].grid(
+            row=index * self.row_offset, column=3, rowspan=self.row_offset
+        )
+        self.gyroscope_figures[gesture].set_ylim(-3000, 3000)
+
+        self.gesture_selected_samples_label[gesture] = Label(self.frame)
+        self.gesture_selected_samples_label[gesture].grid(
+            row=index * self.row_offset + 2, column=1, sticky="nsew"
+        )
+        
+        selected_gesture = self.gesture_selected_combobox[gesture].get()
+        if selected_gesture:
+            # load data to DataFrame
+            df = pd.read_csv(f"./savedata/{gesture}/{selected_gesture}")
+
+            self.accelerometer_figures[gesture].clear()
+            self.gyroscope_figures[gesture].clear()
+
+            # Load data to plot
+            for _, row in df.iterrows():
+                accelerometer_data = {
+                    "x-axis": float(row["aX"]),
+                    "y-axis": float(row["aY"]),
+                    "z-axis": float(row["aZ"]),
+                }
+                self.accelerometer_figures[gesture].append_dict(
+                    row["Time"], accelerometer_data
+                )
+
+                gyroscope_data = {
+                    "x-axis": float(row["gX"]),
+                    "y-axis": float(row["gY"]),
+                    "z-axis": float(row["gZ"]),
+                }
+                self.gyroscope_figures[gesture].append_dict(row["Time"], gyroscope_data)
+
+            self.accelerometer_figures[gesture].draw()
+            self.gyroscope_figures[gesture].draw()
+
+    def update_content(self, gesture: str) -> None:
+        self.gesture_counts_label[gesture].configure(
+            text=f"{len(self.gesture_files[gesture])} item"
+        )
+        self.gesture_selected_combobox[gesture].set_completion_list(
+            self.gesture_files[gesture]
+        )
+        selected_gesture = self.gesture_selected_combobox[gesture].get()
+        
+        if (
+            not selected_gesture
+            or self.old_selected_gestures.get(gesture) == selected_gesture
+        ):
+            return
+        self.old_selected_gestures[gesture] = self.gesture_selected_combobox[
+            gesture
+        ].get()
+        
+        # load data to DataFrame
+        df = pd.read_csv(f"./savedata/{gesture}/{selected_gesture}")
+
+        self.accelerometer_figures[gesture].clear()
+        self.gyroscope_figures[gesture].clear()
+
+        # Load data to plot
+        for _, row in df.iterrows():
+            accelerometer_data = {
+                "x-axis": float(row["aX"]),
+                "y-axis": float(row["aY"]),
+                "z-axis": float(row["aZ"]),
+            }
+            self.accelerometer_figures[gesture].append_dict(
+                row["Time"], accelerometer_data
+            )
+
+            gyroscope_data = {
+                "x-axis": float(row["gX"]),
+                "y-axis": float(row["gY"]),
+                "z-axis": float(row["gZ"]),
+            }
+            self.gyroscope_figures[gesture].append_dict(row["Time"], gyroscope_data)
+
+        self.accelerometer_figures[gesture].draw()
+        self.gyroscope_figures[gesture].draw()
+        self.gesture_selected_samples_label[gesture].configure(
+            text=f"{len(df)} samples"
+        )
+
+    def get_gesture_files(self, gesture: str) -> list[str]:
+        folder_path = f"./savedata/{gesture}"
+        if not os.path.exists(folder_path) or not os.listdir(folder_path):
+            return []
+        else:
+            return [
+                name
+                for name in os.listdir(folder_path)
+                if os.path.isfile(os.path.join(folder_path, name))
+            ]
+
+    def on_frame_configure(self, event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+
 def on_closing():
     print("Exiting")
-    app.close()
+    serial_app.close()
+    viewer_app.close()
     root.quit()  # This will exit the main loop
     root.destroy()
 
@@ -330,6 +546,7 @@ if __name__ == "__main__":
     tabControl.add(tab2, text="Data Viewer")
     tabControl.pack(expand=1, fill="both")
 
-    app = SerialApp(tab1)
+    serial_app = SerialApp(tab1)
+    viewer_app = DataViewerApp(tab2)
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()

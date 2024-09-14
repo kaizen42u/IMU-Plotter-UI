@@ -14,11 +14,17 @@ class tkAutocompleteCombobox(ttk.Combobox):
         self["values"] = self._completion_list
 
     def set_completion_list(self, completion_list: list[str]) -> None:
+        old_selection = self.get()
         self.update_completion_list(completion_list)
 
+        if old_selection in self._completion_list:
+            self.select_item(old_selection)
+            return
+        
         # Automatically select the first item in the list
         if self._completion_list:
             self.select_item(self._completion_list[0])
+            return
 
     def autocomplete(self, delta: int = 0) -> None:
         if delta:

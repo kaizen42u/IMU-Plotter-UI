@@ -42,8 +42,8 @@ class tkPlotGraph:
         self.lines = {}
 
     # Partial function of tk.grid()
-    def grid(self, row: int = 0, column: int = 0) -> None:
-        self.canvas.get_tk_widget().grid(row=row, column=column)
+    def grid(self, row: int = 0, column: int = 0, **kwargs) -> None:
+        self.canvas.get_tk_widget().grid(row=row, column=column, **kwargs)
 
     # Clears graph data
     def clear(self) -> None:
