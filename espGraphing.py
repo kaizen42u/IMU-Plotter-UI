@@ -108,7 +108,9 @@ class SerialApp:
 
         def gesture_select(event: Event) -> None:
             # Create directory if it doesn't exist
-            os.makedirs(f"savedata/{self.gesture_selected_combobox.get()}", exist_ok=True)
+            os.makedirs(
+                f"savedata/{self.gesture_selected_combobox.get()}", exist_ok=True
+            )
             self.show_message(
                 f"Gesture selected: {ANSI.bCyan}{self.gesture_selected_combobox.get()}{ANSI.default}"
             )
@@ -116,9 +118,7 @@ class SerialApp:
         self.gesture_selected_combobox = tkAutocompleteCombobox(self.save_option_frame)
         self.gesture_selected_combobox.set_completion_list(get_gesture_list())
         self.gesture_selected_combobox.grid(row=1, column=1, pady=20)
-        self.gesture_selected_combobox.bind(
-            "<<ComboboxSelected>>", gesture_select
-        )
+        self.gesture_selected_combobox.bind("<<ComboboxSelected>>", gesture_select)
 
         # Configure the grid to expand
         root.grid_rowconfigure(1, weight=1)
@@ -339,7 +339,7 @@ class DataViewerApp:
         while not self.killed:
             sleep(0.1)
             self.update_contents()
-            
+
             if len(self.gestures) != len(get_gesture_list()):
                 self = DataViewerApp(self.root)
 
@@ -402,7 +402,9 @@ class DataViewerApp:
             row=index * self.row_offset + 1, column=0, sticky="nsew"
         )
 
-        self.gesture_selected_combobox[gesture] = tkAutocompleteCombobox(self.frame, state="readonly")
+        self.gesture_selected_combobox[gesture] = tkAutocompleteCombobox(
+            self.frame, state="readonly"
+        )
         self.gesture_selected_combobox[gesture].set_completion_list(
             self.gesture_files[gesture]
         )
@@ -431,7 +433,7 @@ class DataViewerApp:
         self.gesture_selected_samples_label[gesture].grid(
             row=index * self.row_offset + 2, column=1, sticky="nsew"
         )
-        
+
         selected_gesture = self.gesture_selected_combobox[gesture].get()
         if selected_gesture:
             # load data to DataFrame
@@ -469,7 +471,7 @@ class DataViewerApp:
             self.gesture_files[gesture]
         )
         selected_gesture = self.gesture_selected_combobox[gesture].get()
-        
+
         if (
             not selected_gesture
             or self.old_selected_gestures.get(gesture) == selected_gesture
@@ -478,7 +480,7 @@ class DataViewerApp:
         self.old_selected_gestures[gesture] = self.gesture_selected_combobox[
             gesture
         ].get()
-        
+
         # load data to DataFrame
         df = pd.read_csv(f"./savedata/{gesture}/{selected_gesture}")
 
