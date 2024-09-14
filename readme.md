@@ -39,6 +39,12 @@ Run the `espGraphing.py` script:
 python espGraphing.py
 ```
 
+### Taking sample
+Choose the Serial Port to connect to the MCU. Collect data and then save to .csv files via GUI
+
+## Training Model
+Use the `train.ipynb` script
+
 ## Features
 - Graphs IMU acceleration and angular velocity
 - Save as .csv
