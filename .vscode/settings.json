@@ -1,3 +1,35 @@
 {
-    "python.analysis.typeCheckingMode": "basic"
+    "python.analysis.typeCheckingMode": "basic",
+    "cSpell.words": [
+        "argmax",
+        "autoscale",
+        "autoscroll",
+        "baudrate",
+        "Blackletter",
+        "Chetwode",
+        "columnspan",
+        "Consolas",
+        "crossedout",
+        "figsize",
+        "ipynb",
+        "iterrows",
+        "keysym",
+        "overlined",
+        "padx",
+        "pady",
+        "popleft",
+        "relim",
+        "rowspan",
+        "savedata",
+        "scalex",
+        "scrollregion",
+        "serr",
+        "Striked",
+        "timespan",
+        "tkagg",
+        "venv",
+        "xlim",
+        "ylim",
+        "yscrollcommand"
+    ]
 }
