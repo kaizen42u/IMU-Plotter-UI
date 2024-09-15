@@ -6,6 +6,7 @@ This project reads COM port data and parses the output for graphing the IMU acce
 ### Prerequisites
 - Python
 - Git for Windows
+- Jupyter Notebook
 
 ### Installation
 1. Clone this repository:
