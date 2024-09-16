@@ -18,6 +18,7 @@
         "padx",
         "pady",
         "popleft",
+        "PROGMEM",
         "relim",
         "rowspan",
         "savedata",
