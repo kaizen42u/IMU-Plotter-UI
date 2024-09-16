@@ -15,7 +15,8 @@ class tkPlotGraph:
         root: Misc,
         figsize: tuple[int, int] = (5, 4),
         dpi: int = 80,
-        timespan: int = 5000,
+        timespan: int | float | None = None,
+        max_samples: int | None = None,
         title: str = "Graph",
     ) -> None:
 
@@ -24,6 +25,7 @@ class tkPlotGraph:
         self.root = root
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.root)
         self.timespan = timespan
+        self.max_samples = max_samples
         self.title = title
 
         # Graph data
@@ -66,6 +68,7 @@ class tkPlotGraph:
             self.data_series[label].append(data)
 
         self.remove_old_data(timestamp)
+        self.limit_sample_size()
 
     # Appends timestamp and a list of data to the list, also clears old data
     def append_list(self, timestamp: int | float, data_list: list[int | float]) -> None:
@@ -78,6 +81,7 @@ class tkPlotGraph:
             self.data_series[label].append(data)
 
         self.remove_old_data(timestamp)
+        self.limit_sample_size()
 
     # Appends timestamp and a single data point to the list, also clears old data
     def append_single(self, timestamp: int | float, data: int | float) -> None:
@@ -89,10 +93,24 @@ class tkPlotGraph:
         self.data_series[label].append(data)
 
         self.remove_old_data(timestamp)
+        self.limit_sample_size()
 
     # Remove data older than x milliseconds
     def remove_old_data(self, timestamp: int | float) -> None:
+        if self.timespan is None:
+            return
+
         while self.timestamp and self.timestamp[0] < timestamp - self.timespan:
+            self.timestamp.popleft()
+            for series in self.data_series.values():
+                series.popleft()
+
+    # Limit the number of samples in the plot
+    def limit_sample_size(self) -> None:
+        if self.max_samples is None:
+            return
+
+        while len(self.timestamp) > self.max_samples:
             self.timestamp.popleft()
             for series in self.data_series.values():
                 series.popleft()
