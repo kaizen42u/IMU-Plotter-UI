@@ -40,7 +40,9 @@ class SerialApp:
         self.root = root
         self.serial_port = None
         self.killed = False
-        self.total_time = 0
+        self.show_imu_data = True
+        self.show_model_result = True
+        # self.total_time = 0
 
         # Get a list of all available serial ports
         ports = self.get_ports()
@@ -76,13 +78,13 @@ class SerialApp:
 
         # Create figures and a canvas to draw on
         self.accelerometer_figure = tkPlotGraph(
-            root=root, title="Acceleration (G)", timespan=1000
+            root=root, title="Acceleration (G)", max_samples=120
         )
         self.accelerometer_figure.grid(row=2, column=0)
         self.accelerometer_figure.set_ylim(-4, 4)
 
         self.gyroscope_figure = tkPlotGraph(
-            root=root, title="Angular Velocity (DPS)", timespan=1000
+            root=root, title="Angular Velocity (DPS)", max_samples=120
         )
         self.gyroscope_figure.grid(row=2, column=1)
         self.gyroscope_figure.set_ylim(-3000, 3000)
@@ -92,6 +94,22 @@ class SerialApp:
         self.save_option_frame.grid_columnconfigure(0, weight=1)
         self.save_option_frame.grid(row=2, column=2)
 
+        # Create show/hide IMU data button
+        self.imu_data_toggle_button = tk.Button(
+            self.save_option_frame, text="Hide IMU data", command=self.imu_data_toggle
+        )
+        self.imu_data_toggle_button.config(width=20)
+        self.imu_data_toggle_button.grid(row=0, column=0)
+
+        # Create show/hide model result button
+        self.model_result_toggle_button = tk.Button(
+            self.save_option_frame,
+            text="Hide model result",
+            command=self.model_result_toggle,
+        )
+        self.model_result_toggle_button.config(width=20)
+        self.model_result_toggle_button.grid(row=1, column=0)
+
         # Create save to .csv button, this saves the graph data as csv
         # Save to: "savedata/gesture1/[datetime].csv", ..., "savedata/gesture1/[datetime].csv".
         # Format: Time, aX, aY, aZ, gX, gY, gZ
@@ -99,12 +117,12 @@ class SerialApp:
             self.save_option_frame, text="Save as .csv", command=self.save_csv
         )
         self.gesture_save_button.config(width=20)
-        self.gesture_save_button.grid(row=0, column=0)
+        self.gesture_save_button.grid(row=2, column=0)
 
         self.gesture_selected_label = tk.Label(
             self.save_option_frame, text="Selected Gesture:"
         )
-        self.gesture_selected_label.grid(row=1, column=0, pady=20)
+        self.gesture_selected_label.grid(row=3, column=0)
 
         def gesture_select(event: Event) -> None:
             # Create directory if it doesn't exist
@@ -117,7 +135,7 @@ class SerialApp:
 
         self.gesture_selected_combobox = tkAutocompleteCombobox(self.save_option_frame)
         self.gesture_selected_combobox.set_completion_list(get_gesture_list())
-        self.gesture_selected_combobox.grid(row=1, column=1, pady=20)
+        self.gesture_selected_combobox.grid(row=4, column=0)
         self.gesture_selected_combobox.bind("<<ComboboxSelected>>", gesture_select)
 
         # Configure the grid to expand
@@ -185,6 +203,22 @@ class SerialApp:
                 )
         self.show_message(f"Data saved to {filename}, {total_samples} samples")
 
+    def imu_data_toggle(self) -> None:
+        if self.show_imu_data:
+            self.show_imu_data = False
+            self.imu_data_toggle_button.configure(text="Show IMU data")
+        else:
+            self.show_imu_data = True
+            self.imu_data_toggle_button.configure(text="Hide IMU data")
+
+    def model_result_toggle(self) -> None:
+        if self.show_model_result:
+            self.show_model_result = False
+            self.model_result_toggle_button.configure(text="Show model result")
+        else:
+            self.show_model_result = True
+            self.model_result_toggle_button.configure(text="Hide model result")
+
     def connect_toggle(self) -> None:
         # If already connected, disconnect
         if self.serial_port and self.serial_port.is_open:
@@ -223,6 +257,17 @@ class SerialApp:
                 f"{ANSI.bBrightMagenta} Port [{self.port_var.get()}] Disconnected{ANSI.default}\n"
             )
 
+    def update_terminal(self, reading: str) -> None:
+        is_imu = reading.startswith("[IMU]")
+        if is_imu and not self.show_imu_data:
+            return
+
+        is_model_result = reading.startswith("[Result]")
+        if is_model_result and not self.show_model_result:
+            return
+
+        self.terminal.write(reading)
+
     def update_graphs(self, reading: str) -> None:
         match = re.search(
             r"\[IMU\] \[\s*(\d+) ms\], Acc: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] G, Gyro: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] DPS",
@@ -230,24 +275,24 @@ class SerialApp:
         )
         if match:
             time, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = match.groups()
-            self.total_time = self.total_time + int(time)
+            # self.total_time = self.total_time + int(time)
 
             accelerometer_data = {
                 "x-axis": float(acc_x),
                 "y-axis": float(acc_y),
                 "z-axis": float(acc_z),
             }
-            self.accelerometer_figure.append_dict(self.total_time, accelerometer_data)
+            self.accelerometer_figure.append_dict(int(time), accelerometer_data)
 
             gyroscope_data = {
                 "x-axis": float(gyro_x),
                 "y-axis": float(gyro_y),
                 "z-axis": float(gyro_z),
             }
-            self.gyroscope_figure.append_dict(self.total_time, gyroscope_data)
+            self.gyroscope_figure.append_dict(int(time), gyroscope_data)
 
     def reset_graphs(self) -> None:
-        self.total_time = 0
+        # self.total_time = 0
         self.accelerometer_figure.clear()
         self.gyroscope_figure.clear()
 
@@ -284,7 +329,7 @@ class SerialApp:
 
                         reading = line.decode("utf-8")
                         self.update_graphs(reading)
-                        self.terminal.write(reading)
+                        self.update_terminal(reading)
 
                     except serial.SerialException as serr:
                         self.disconnect_serial()
@@ -414,7 +459,7 @@ class DataViewerApp:
 
         # Create figures and a canvas to draw on
         self.accelerometer_figures[gesture] = tkPlotGraph(
-            root=self.frame, title="Acceleration (G)", timespan=1000
+            root=self.frame, title="Acceleration (G)"
         )
         self.accelerometer_figures[gesture].grid(
             row=index * self.row_offset, column=2, rowspan=self.row_offset
@@ -422,7 +467,7 @@ class DataViewerApp:
         self.accelerometer_figures[gesture].set_ylim(-4, 4)
 
         self.gyroscope_figures[gesture] = tkPlotGraph(
-            root=self.frame, title="Angular Velocity (DPS)", timespan=1000
+            root=self.frame, title="Angular Velocity (DPS)"
         )
         self.gyroscope_figures[gesture].grid(
             row=index * self.row_offset, column=3, rowspan=self.row_offset
