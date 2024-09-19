@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 class tkPlotGraph:
     def __init__(
         self,
-        root: Misc,
+        master: Misc,
         figsize: tuple[int, int] = (5, 4),
         dpi: int = 80,
         timespan: int | float | None = None,
@@ -22,8 +22,7 @@ class tkPlotGraph:
 
         # Create a figure and a canvas to draw on
         self.figure = plt.figure(figsize=figsize, dpi=dpi)
-        self.root = root
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.root)
+        self.canvas = FigureCanvasTkAgg(self.figure, master=master)
         self.timespan = timespan
         self.max_samples = max_samples
         self.title = title
@@ -149,15 +148,15 @@ def main():
 
     root = Tk()
 
-    figure1 = tkPlotGraph(root=root, title="Test Append Dict")
+    figure1 = tkPlotGraph(master=root, title="Test Append Dict")
     figure1.grid(row=0, column=0)
     figure1.set_ylim(-4, 4)
 
-    figure2 = tkPlotGraph(root=root, title="Test Append List")
+    figure2 = tkPlotGraph(master=root, title="Test Append List")
     figure2.grid(row=0, column=1)
     figure2.set_ylim(-4, 4)
 
-    figure3 = tkPlotGraph(root=root, title="Test Append Single")
+    figure3 = tkPlotGraph(master=root, title="Test Append Single")
     figure3.grid(row=0, column=2)
     figure3.set_ylim(-4, 4)
 
