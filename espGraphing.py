@@ -7,12 +7,14 @@ from tkinter import ttk
 import csv
 import os
 from datetime import datetime
+from typing import List
 
 import matplotlib
 import pandas as pd
 import serial
 import serial.tools.list_ports
 
+from SerialHandler import SerialHandler
 from ansiEncoding import ANSI
 
 from tkAutocompleteCombobox import tkAutocompleteCombobox
@@ -40,7 +42,7 @@ def get_gestures() -> list[str]:
 class SerialPlotterApp:
 
     def __init__(self, root: tk.Misc) -> None:
-        self.root = root
+        self.root: tk.Misc = root
         self.serial_port = None
         self.killed = False
         self.show_imu_data = True
@@ -50,9 +52,14 @@ class SerialPlotterApp:
 
         # Get a list of all available serial ports
         #! TODO: update `ports` on device change
-        ports = self.get_ports()
+        self.serial: SerialHandler = SerialHandler()
+        ports = self.serial.get_ports()
         self.port_selection_combobox.set_completion_list(ports)
+        self.serial.set_line_received_callback(self.serial_line_received)
+        self.serial.set_log_callback(self.serial_log)
+        self.serial.set_ports_changed_callback(self.serial_ports_changed)
 
+        # Attach event handler on new gesture selected
         def gesture_select(event: tk.Event) -> None:
             # Create directory if it doesn't exist
             os.makedirs(
@@ -63,14 +70,11 @@ class SerialPlotterApp:
                 f"Gesture selected: {ANSI.bCyan}{self.gesture_selected_combobox.get()}{ANSI.default}"
             )
 
-        # Attach event handler on new gesture selected
         self.gesture_selected_combobox.bind("<<ComboboxSelected>>", gesture_select)
 
         # Create threads to draw figures and serial port reading
         self.draw_graphs_thread = threading.Thread(target=self.draw_graphs)
         self.draw_graphs_thread.start()
-        self.read_serial_thread = threading.Thread(target=self.read_from_port)
-        self.read_serial_thread.start()
 
     def setup_ui(self) -> None:
 
@@ -168,28 +172,24 @@ class SerialPlotterApp:
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_columnconfigure(2, weight=1)
 
-    def get_ports(self) -> list[str]:
-        # Get a list of all available serial ports
-        ports = serial.tools.list_ports.comports()
-        return [port.device for port in ports]
-
     def close(self) -> None:
         # Flag the process as dead and close serial port
         self.killed = True
-        self.disconnect_serial()
-
-        # Attempt to join the draw_graphs_thread with a timeout
-        self.draw_graphs_thread.join(timeout=1)
-        if self.draw_graphs_thread.is_alive():
-            print("draw_graphs_thread did not exit in time")
-
-        # Attempt to join the read_serial_thread with a timeout
-        self.read_serial_thread.join(timeout=1)
-        if self.read_serial_thread.is_alive():
-            print("read_serial_thread did not exit in time")
+        self.serial.close()
 
         #! TODO: Fix draw_graphs_thread not exiting.
         print("[W] Close terminal to exit the program.")
+
+    def serial_line_received(self, line: str) -> None:
+        self.update_graphs(line)
+        self.update_terminal(line)
+
+    def serial_log(self, message: str) -> None:
+        self.show_message(message)
+
+    def serial_ports_changed(self, ports: List[str]) -> None:
+        self.port_selection_combobox.set_completion_list(ports)
+        self.show_message(f"Ports changed: {ports}")
 
     def save_csv(self) -> None:
         # Create directory if it doesn't exist
@@ -242,43 +242,20 @@ class SerialPlotterApp:
 
     def connect_toggle(self) -> None:
         # If already connected, disconnect
-        if self.serial_port and self.serial_port.is_open:
-            self.disconnect_serial()
+        if self.serial.is_connected():
+            self.serial.disconnect()
+            self.serial_connect_toggle_button.configure(text="Connect")
             return
 
         # Otherwise, try to connect
         self.reset_graphs()
         try:
-            self.connect_serial()
+            self.serial.connect(self.port_selection_combobox.get())
+            self.serial_connect_toggle_button.configure(text="Disconnect")
 
         except serial.SerialException as e:
             self.show_message(
                 f"Could not open port [{self.port_selection_combobox.get()}]: {e}"
-            )
-
-    def connect_serial(self):
-
-        # Resets MCU
-        # self.serial_port = serial.Serial(self.port_var.get())
-        self.serial_port = serial.Serial(self.port_selection_combobox.get())
-        self.serial_port.close()
-
-        # Open port
-        self.serial_port = serial.Serial(
-            self.port_selection_combobox.get(), baudrate=115200, timeout=1.0
-        )
-        self.serial_connect_toggle_button.config(text="Disconnect")
-
-        self.terminal.write(
-            f"{ANSI.bBrightMagenta} Port [{self.port_selection_combobox.get()}] Connected{ANSI.default}\n"
-        )
-
-    def disconnect_serial(self):
-        if self.serial_port and self.serial_port.is_open:
-            self.serial_port.close()
-            self.serial_connect_toggle_button.config(text="Connect")
-            self.terminal.write(
-                f"{ANSI.bBrightMagenta} Port [{self.port_selection_combobox.get()}] Disconnected{ANSI.default}\n"
             )
 
     def update_terminal(self, reading: str) -> None:
@@ -290,7 +267,7 @@ class SerialPlotterApp:
         if is_model_result and not self.show_model_result:
             return
 
-        self.terminal.write(reading)
+        self.terminal.write(reading + "\n")
 
     def update_graphs(self, reading: str) -> None:
         match = re.search(
@@ -336,46 +313,6 @@ class SerialPlotterApp:
             except Exception as err:
                 self.show_message(f"Graphing Exception: {err}")
         print("Graphing thread exited")
-
-    def read_from_port(self) -> None:
-        try:
-            while not self.killed:
-                sleep(0.05)
-
-                # Reads serial port data by line
-                while self.serial_port and self.serial_port.is_open:
-                    try:
-                        line = self.serial_port.readline()
-
-                        # Check if line is not empty
-                        if not line:
-                            break
-
-                        reading = line.decode("utf-8")
-                        self.update_graphs(reading)
-                        self.update_terminal(reading)
-
-                    except serial.SerialException as serr:
-                        self.disconnect_serial()
-                        self.show_message(
-                            f"Could not read port [{self.port_selection_combobox.get()}]: {serr}"
-                        )
-
-                    except TypeError as terr:
-                        self.show_message(
-                            f"Bad serial data for port [{self.port_selection_combobox.get()}]: {terr}"
-                        )
-
-                    except Exception as err:
-                        self.show_message(f"Serial Exception: {err}")
-
-            print("Serial Port thread exiting")
-        except Exception as err:
-            self.show_message(
-                f"### Serial Port thread killed, trying to restart: {err} ###"
-            )
-            self.read_serial_thread = threading.Thread(target=self.read_from_port)
-            self.read_serial_thread.start()
 
     def show_message(self, msg: str) -> None:
         self.terminal.write(f"{ANSI.bBrightMagenta}{msg}{ANSI.default} \n")
