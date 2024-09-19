@@ -5,7 +5,7 @@ from time import sleep
 from typing import Callable, Optional, List
 
 
-class SerialHandler:
+class serialHandler:
     def __init__(
         self,
         line_received_callback: Optional[Callable[[str], None]] = None,
@@ -134,7 +134,7 @@ def my_ports_changed(ports: Optional[List[str]]) -> None:
 
 
 if __name__ == "__main__":
-    serial_handler = SerialHandler()
+    serial_handler = serialHandler()
     serial_handler.set_line_received_callback(my_line_received)
     serial_handler.set_log_callback(my_log)
     serial_handler.set_ports_changed_callback(my_ports_changed)

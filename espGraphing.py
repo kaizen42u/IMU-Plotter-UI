@@ -14,7 +14,7 @@ import pandas as pd
 import serial
 import serial.tools.list_ports
 
-from SerialHandler import SerialHandler
+from serialHandler import serialHandler
 from ansiEncoding import ANSI
 
 from tkAutocompleteCombobox import tkAutocompleteCombobox
@@ -54,7 +54,7 @@ class SerialPlotterApp:
         self.show_imu_data: bool = True
         self.show_model_result: bool = True
 
-        self.serial: SerialHandler = SerialHandler()
+        self.serial: serialHandler = serialHandler()
 
         self.setup_ui()
 
