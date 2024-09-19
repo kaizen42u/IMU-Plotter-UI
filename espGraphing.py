@@ -7,7 +7,7 @@ from tkinter import ttk
 import csv
 import os
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 import matplotlib
 import pandas as pd
@@ -43,34 +43,38 @@ class SerialPlotterApp:
 
     def __init__(self, root: tk.Misc) -> None:
         self.root: tk.Misc = root
-        self.serial_port = None
-        self.killed = False
-        self.show_imu_data = True
-        self.show_model_result = True
+        self.killed: bool = False
+        self.show_imu_data: bool = True
+        self.show_model_result: bool = True
+
+        self.serial: SerialHandler = SerialHandler()
 
         self.setup_ui()
 
         # Get a list of all available serial ports
         #! TODO: update `ports` on device change
-        self.serial: SerialHandler = SerialHandler()
         ports = self.serial.get_ports()
         self.port_selection_combobox.set_completion_list(ports)
+        self.serial_connect_toggle_button_update()
+
         self.serial.set_line_received_callback(self.serial_line_received)
         self.serial.set_log_callback(self.serial_log)
         self.serial.set_ports_changed_callback(self.serial_ports_changed)
 
         # Attach event handler on new gesture selected
-        def gesture_select(event: tk.Event) -> None:
+        def gesture_selected_create_folder(event: tk.Event) -> None:
             # Create directory if it doesn't exist
             os.makedirs(
                 f"{savedata_folder_path}/{self.gesture_selected_combobox.get()}",
                 exist_ok=True,
             )
-            self.show_message(
+            self.terminal_show_message(
                 f"Gesture selected: {ANSI.bCyan}{self.gesture_selected_combobox.get()}{ANSI.default}"
             )
 
-        self.gesture_selected_combobox.bind("<<ComboboxSelected>>", gesture_select)
+        self.gesture_selected_combobox.bind(
+            "<<ComboboxSelected>>", gesture_selected_create_folder
+        )
 
         # Create threads to draw figures and serial port reading
         self.draw_graphs_thread = threading.Thread(target=self.draw_graphs)
@@ -86,7 +90,7 @@ class SerialPlotterApp:
 
         # Create serial connect/disconnect button
         self.serial_connect_toggle_button = tk.Button(
-            master=self.root, text="Connect", command=self.connect_toggle
+            master=self.root, text="null", command=self.serial_connect_toggle
         )
         self.serial_connect_toggle_button.config(width=20)
         self.serial_connect_toggle_button.grid(row=0, column=1)
@@ -177,6 +181,10 @@ class SerialPlotterApp:
         self.killed = True
         self.serial.close()
 
+        self.draw_graphs_thread.join(timeout=1)
+        if self.draw_graphs_thread.is_alive():
+            print("draw_graphs_thread did not exit in time")
+
         #! TODO: Fix draw_graphs_thread not exiting.
         print("[W] Close terminal to exit the program.")
 
@@ -185,11 +193,36 @@ class SerialPlotterApp:
         self.update_terminal(line)
 
     def serial_log(self, message: str) -> None:
-        self.show_message(message)
+        self.terminal_show_message(message)
 
     def serial_ports_changed(self, ports: List[str]) -> None:
-        self.port_selection_combobox.set_completion_list(ports)
-        self.show_message(f"Ports changed: {ports}")
+        self.port_selection_combobox.set_completion_list(
+            list(set(self.port_selection_combobox.get_completion_list() + ports))
+        )
+        self.serial_connect_toggle_button_update()
+        self.terminal_show_message(f"Ports changed: {ports}")
+
+    def serial_connect_toggle_button_update(self) -> None:
+        display_text = "Disconnect" if self.serial.is_connected() else "Connect"
+        self.serial_connect_toggle_button.configure(text=display_text)
+
+    def serial_connect_toggle(self) -> None:
+        # If already connected, disconnect
+        if self.serial.is_connected():
+            self.serial.disconnect()
+            self.serial_connect_toggle_button_update()
+            return
+
+        # Otherwise, try to connect
+        self.reset_graphs()
+        try:
+            self.serial.connect(self.port_selection_combobox.get())
+            self.serial_connect_toggle_button_update()
+
+        except serial.SerialException as e:
+            self.terminal_show_message(
+                f"Could not open port [{self.port_selection_combobox.get()}]: {e}"
+            )
 
     def save_csv(self) -> None:
         # Create directory if it doesn't exist
@@ -207,7 +240,7 @@ class SerialPlotterApp:
             writer.writerow(["Time", "aX", "aY", "aZ", "gX", "gY", "gZ"])
 
             # Write the data
-            total_samples = len(self.accelerometer_figure.timestamp)
+            total_samples: int = len(self.accelerometer_figure.timestamp)
             for i in range(total_samples):
                 writer.writerow(
                     [
@@ -222,48 +255,26 @@ class SerialPlotterApp:
                         self.gyroscope_figure.data_series["z-axis"][i],
                     ]
                 )
-        self.show_message(f"Data saved to {filename}, {total_samples} samples")
+        self.terminal_show_message(f"Data saved to {filename}, {total_samples} samples")
 
     def imu_data_toggle(self) -> None:
-        if self.show_imu_data:
-            self.show_imu_data = False
-            self.imu_data_toggle_button.configure(text="Show IMU data")
-        else:
-            self.show_imu_data = True
-            self.imu_data_toggle_button.configure(text="Hide IMU data")
+        self.show_imu_data = not self.show_imu_data
+        display_text = "Hide IMU data" if self.show_imu_data else "Show IMU data"
+        self.imu_data_toggle_button.configure(text=display_text)
 
     def model_result_toggle(self) -> None:
-        if self.show_model_result:
-            self.show_model_result = False
-            self.model_result_toggle_button.configure(text="Show model result")
-        else:
-            self.show_model_result = True
-            self.model_result_toggle_button.configure(text="Hide model result")
-
-    def connect_toggle(self) -> None:
-        # If already connected, disconnect
-        if self.serial.is_connected():
-            self.serial.disconnect()
-            self.serial_connect_toggle_button.configure(text="Connect")
-            return
-
-        # Otherwise, try to connect
-        self.reset_graphs()
-        try:
-            self.serial.connect(self.port_selection_combobox.get())
-            self.serial_connect_toggle_button.configure(text="Disconnect")
-
-        except serial.SerialException as e:
-            self.show_message(
-                f"Could not open port [{self.port_selection_combobox.get()}]: {e}"
-            )
+        self.show_model_result = not self.show_model_result
+        display_text = (
+            "Hide model result" if self.show_model_result else "Show model result"
+        )
+        self.model_result_toggle_button.configure(text=display_text)
 
     def update_terminal(self, reading: str) -> None:
-        is_imu = reading.startswith("[IMU]")
-        if is_imu and not self.show_imu_data:
+        is_imu_data: bool = reading.startswith("[IMU]")
+        if is_imu_data and not self.show_imu_data:
             return
 
-        is_model_result = reading.startswith("[Result]")
+        is_model_result: bool = reading.startswith("[Result]")
         if is_model_result and not self.show_model_result:
             return
 
@@ -276,7 +287,6 @@ class SerialPlotterApp:
         )
         if match:
             time, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = match.groups()
-            # self.total_time = self.total_time + int(time)
 
             accelerometer_data = {
                 "x-axis": float(acc_x),
@@ -293,7 +303,6 @@ class SerialPlotterApp:
             self.gyroscope_figure.append_dict(int(time), gyroscope_data)
 
     def reset_graphs(self) -> None:
-        # self.total_time = 0
         self.accelerometer_figure.clear()
         self.gyroscope_figure.clear()
 
@@ -307,23 +316,36 @@ class SerialPlotterApp:
                 self.gyroscope_figure.draw()
 
             except RuntimeError:
-                self.show_message(str(sys.exc_info()))
+                self.terminal_show_message(str(sys.exc_info()))
                 pass
 
             except Exception as err:
-                self.show_message(f"Graphing Exception: {err}")
+                self.terminal_show_message(f"Graphing Exception: {err}")
         print("Graphing thread exited")
 
-    def show_message(self, msg: str) -> None:
-        self.terminal.write(f"{ANSI.bBrightMagenta}{msg}{ANSI.default} \n")
-        print(msg)
+    def terminal_show_message(self, message: str) -> None:
+        self.terminal.write(f"{ANSI.bBrightMagenta}{message}{ANSI.default} \n")
+        print(message)
 
 
 class DataViewerApp:
+
+    class GestureData:
+        def __init__(self):
+            self.name_label: Optional[tk.Label] = None
+            self.counts_label: Optional[tk.Label] = None
+            self.selected_label: Optional[tk.Label] = None
+            self.files: list[str] = []
+            self.selected_samples_label: Optional[tk.Label] = None
+            self.selected_combobox: Optional[tkAutocompleteCombobox] = None
+            self.accelerometer_figure: Optional[tkPlotGraph] = None
+            self.gyroscope_figure: Optional[tkPlotGraph] = None
+            self.old_selected: Optional[str] = None
+
     def __init__(self, root: tk.Misc) -> None:
-        self.root = root
-        self.killed = False
-        self.gestures = get_gestures()
+        self.root: tk.Misc = root
+        self.killed: bool = False
+        self.gestures: list[str] = get_gestures()
         self.gesture_name_label: dict[str, tk.Label] = {}
         self.gesture_counts_label: dict[str, tk.Label] = {}
         self.gesture_selected_label: dict[str, tk.Label] = {}
@@ -333,7 +355,7 @@ class DataViewerApp:
         self.accelerometer_figures: dict[str, tkPlotGraph] = {}
         self.gyroscope_figures: dict[str, tkPlotGraph] = {}
         self.old_selected_gestures: dict[str, str] = {}
-        self.row_offset = 4
+        self.row_offset: int = 4
 
         self.setup_ui()
         self.populate_tables()
@@ -352,7 +374,6 @@ class DataViewerApp:
     def update_contents(self) -> None:
         for gesture in self.gestures:
             self.gesture_files[gesture] = self.get_gesture_files(gesture)
-            # print(f"{self.gesture_files[gesture] = }")
             self.update_content(gesture)
 
     def setup_ui(self) -> None:

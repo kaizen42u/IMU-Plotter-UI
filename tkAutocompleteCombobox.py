@@ -26,6 +26,9 @@ class tkAutocompleteCombobox(ttk.Combobox):
             self.select_item(self._completion_list[0])
             return
 
+    def get_completion_list(self) -> list[str]:
+        return self._completion_list
+
     def autocomplete(self, delta: int = 0) -> None:
         if delta:
             self.delete(self.position, tk.END)

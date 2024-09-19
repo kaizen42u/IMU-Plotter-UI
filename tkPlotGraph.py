@@ -31,6 +31,7 @@ class tkPlotGraph:
         self.data_series: dict[str, deque[int | float]] = {}
         self.timestamp: deque[int | float] = deque()
         self.do_ylim: bool = False
+        self.data_modified: bool = False
 
         # Configure Axes object
         self.ax = self.figure.add_subplot(111)
@@ -49,6 +50,7 @@ class tkPlotGraph:
     # Clears graph data
     def clear(self) -> None:
         self.data_series.clear()
+        self.data_modified = True
         self.timestamp.clear()
         self.lines.clear()
         self.ax.clear()  # Clear the axes
@@ -68,6 +70,7 @@ class tkPlotGraph:
 
         self.remove_old_data(timestamp)
         self.limit_sample_size()
+        self.data_modified = True
 
     # Appends timestamp and a list of data to the list, also clears old data
     def append_list(self, timestamp: int | float, data_list: list[int | float]) -> None:
@@ -81,6 +84,7 @@ class tkPlotGraph:
 
         self.remove_old_data(timestamp)
         self.limit_sample_size()
+        self.data_modified = True
 
     # Appends timestamp and a single data point to the list, also clears old data
     def append_single(self, timestamp: int | float, data: int | float) -> None:
@@ -93,6 +97,7 @@ class tkPlotGraph:
 
         self.remove_old_data(timestamp)
         self.limit_sample_size()
+        self.data_modified = True
 
     # Remove data older than x milliseconds
     def remove_old_data(self, timestamp: int | float) -> None:
@@ -122,6 +127,9 @@ class tkPlotGraph:
 
     # Draw graph on canvas
     def draw(self) -> None:
+        if not self.data_modified:
+            return
+        
         for label, series in self.data_series.items():
             self.lines[label].set_data(self.timestamp, series)
 
