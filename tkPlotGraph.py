@@ -47,6 +47,9 @@ class tkPlotGraph:
     def grid(self, row: int = 0, column: int = 0, **kwargs) -> None:
         self.canvas.get_tk_widget().grid(row=row, column=column, **kwargs)
 
+    def close(self):
+        plt.close(fig=self.figure)
+
     # Clears graph data
     def clear(self) -> None:
         self.data_series.clear()
@@ -129,7 +132,7 @@ class tkPlotGraph:
     def draw(self) -> None:
         if not self.data_modified:
             return
-        
+
         for label, series in self.data_series.items():
             self.lines[label].set_data(self.timestamp, series)
 

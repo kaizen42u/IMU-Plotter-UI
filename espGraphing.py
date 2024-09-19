@@ -24,18 +24,25 @@ from tkTerminal import tkTerminal
 matplotlib.use("Agg")
 
 
-savedata_folder_path = "./savedata"
+SAVEDATA_FOLDER_PATH = "./savedata"
+TERMINAL_MAX_WIDTH = 180
+GRAPH_MAX_SAMPLES = 120
+GRAPH_ACCEL_Y_LIMIT = 4
+GRAPH_GYRO_Y_LIMIT = 3000
+SERIAL_IMU_DATA_REGEX = r"\[IMU\] \[\s*(\d+) ms\], Acc: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] G, Gyro: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] DPS"
+THREAD_PLOTTER_DRAW_GRAPH_INTERVAL = 0.05
+THREAD_DATA_VIEWER_UPDATE_INTERVAL = 0.10
 
 
 # Return a list of gestures
 def get_gestures() -> list[str]:
-    if not os.path.exists(savedata_folder_path) or not os.listdir(savedata_folder_path):
+    if not os.path.exists(SAVEDATA_FOLDER_PATH) or not os.listdir(SAVEDATA_FOLDER_PATH):
         return ["idle"]
     else:
         return [
             name
-            for name in os.listdir(savedata_folder_path)
-            if os.path.isdir(os.path.join(savedata_folder_path, name))
+            for name in os.listdir(SAVEDATA_FOLDER_PATH)
+            if os.path.isdir(os.path.join(SAVEDATA_FOLDER_PATH, name))
         ]
 
 
@@ -65,7 +72,7 @@ class SerialPlotterApp:
         def gesture_selected_create_folder(event: tk.Event) -> None:
             # Create directory if it doesn't exist
             os.makedirs(
-                f"{savedata_folder_path}/{self.gesture_selected_combobox.get()}",
+                f"{SAVEDATA_FOLDER_PATH}/{self.gesture_selected_combobox.get()}",
                 exist_ok=True,
             )
             self.terminal_show_message(
@@ -109,22 +116,26 @@ class SerialPlotterApp:
         self.terminal_auto_scroll_checkbox.grid(row=0, column=2)
 
         # Create the serial terminal
-        self.terminal = tkTerminal(master=self.root, width=180)
+        self.terminal = tkTerminal(master=self.root, width=TERMINAL_MAX_WIDTH)
         self.terminal.grid(row=1, column=0, columnspan=3)
 
         # Create figure to draw accelerometer data
         self.accelerometer_figure = tkPlotGraph(
-            master=self.root, title="Acceleration (G)", max_samples=120
+            master=self.root, title="Acceleration (G)", max_samples=GRAPH_MAX_SAMPLES
         )
         self.accelerometer_figure.grid(row=2, column=0)
-        self.accelerometer_figure.set_ylim(low=-4, high=4)
+        self.accelerometer_figure.set_ylim(
+            low=-GRAPH_ACCEL_Y_LIMIT, high=GRAPH_ACCEL_Y_LIMIT
+        )
 
         # Create figure to draw gyroscope data
         self.gyroscope_figure = tkPlotGraph(
-            master=self.root, title="Angular Velocity (DPS)", max_samples=120
+            master=self.root,
+            title="Angular Velocity (DPS)",
+            max_samples=GRAPH_MAX_SAMPLES,
         )
         self.gyroscope_figure.grid(row=2, column=1)
-        self.gyroscope_figure.set_ylim(low=-3000, high=3000)
+        self.gyroscope_figure.set_ylim(low=-GRAPH_GYRO_Y_LIMIT, high=GRAPH_GYRO_Y_LIMIT)
 
         # Create a frame containing options
         self.options_frame = tk.Frame(master=self.root)
@@ -227,11 +238,11 @@ class SerialPlotterApp:
     def save_csv(self) -> None:
         # Create directory if it doesn't exist
         os.makedirs(
-            f"{savedata_folder_path}/{self.gesture_selected_combobox.get()}",
+            f"{SAVEDATA_FOLDER_PATH}/{self.gesture_selected_combobox.get()}",
             exist_ok=True,
         )
         # Create a filename with the current datetime
-        filename = f"{savedata_folder_path}/{self.gesture_selected_combobox.get()}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        filename = f"{SAVEDATA_FOLDER_PATH}/{self.gesture_selected_combobox.get()}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
         # Open the file for writing
         with open(filename, mode="w", newline="") as file:
@@ -282,7 +293,7 @@ class SerialPlotterApp:
 
     def update_graphs(self, reading: str) -> None:
         match = re.search(
-            r"\[IMU\] \[\s*(\d+) ms\], Acc: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] G, Gyro: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] DPS",
+            SERIAL_IMU_DATA_REGEX,
             reading,
         )
         if match:
@@ -308,7 +319,7 @@ class SerialPlotterApp:
 
     def draw_graphs(self) -> None:
         while not self.killed:
-            sleep(0.05)
+            sleep(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL)
 
             # Update graph
             try:
@@ -328,34 +339,24 @@ class SerialPlotterApp:
         print(message)
 
 
-class DataViewerApp:
+class GestureData:
+    name_label: tk.Label
+    counts_label: tk.Label
+    selected_label: tk.Label
+    selected_samples_label: tk.Label
+    selected_combobox: tkAutocompleteCombobox
+    accelerometer_figure: tkPlotGraph
+    gyroscope_figure: tkPlotGraph
+    selected_file: Optional[str] = None
 
-    class GestureData:
-        def __init__(self):
-            self.name_label: Optional[tk.Label] = None
-            self.counts_label: Optional[tk.Label] = None
-            self.selected_label: Optional[tk.Label] = None
-            self.files: list[str] = []
-            self.selected_samples_label: Optional[tk.Label] = None
-            self.selected_combobox: Optional[tkAutocompleteCombobox] = None
-            self.accelerometer_figure: Optional[tkPlotGraph] = None
-            self.gyroscope_figure: Optional[tkPlotGraph] = None
-            self.old_selected: Optional[str] = None
+
+class DataViewerApp:
 
     def __init__(self, root: tk.Misc) -> None:
         self.root: tk.Misc = root
         self.killed: bool = False
-        self.gestures: list[str] = get_gestures()
-        self.gesture_name_label: dict[str, tk.Label] = {}
-        self.gesture_counts_label: dict[str, tk.Label] = {}
-        self.gesture_selected_label: dict[str, tk.Label] = {}
-        self.gesture_files: dict[str, list[str]] = {}
-        self.gesture_selected_samples_label: dict[str, tk.Label] = {}
-        self.gesture_selected_combobox: dict[str, tkAutocompleteCombobox] = {}
-        self.accelerometer_figures: dict[str, tkPlotGraph] = {}
-        self.gyroscope_figures: dict[str, tkPlotGraph] = {}
-        self.old_selected_gestures: dict[str, str] = {}
-        self.row_offset: int = 4
+        self.gestures: dict[str, GestureData] = {}
+        self.ROW_OFFSET: int = 4
 
         self.setup_ui()
         self.populate_tables()
@@ -365,15 +366,19 @@ class DataViewerApp:
 
     def update(self) -> None:
         while not self.killed:
-            sleep(0.1)
+            sleep(THREAD_DATA_VIEWER_UPDATE_INTERVAL)
             self.update_contents()
 
+            # If new gesture is added, re-populate tables
             if len(self.gestures) != len(get_gestures()):
-                self = DataViewerApp(self.root)
+                self.populate_tables()
 
     def update_contents(self) -> None:
         for gesture in self.gestures:
-            self.gesture_files[gesture] = self.get_gesture_files(gesture)
+            # Try to load all files in ./{savedata}/{gesture}/[files]
+            self.gestures[gesture].selected_combobox.set_completion_list(
+                self.get_gesture_files(gesture)
+            )
             self.update_content(gesture)
 
     def setup_ui(self) -> None:
@@ -406,113 +411,113 @@ class DataViewerApp:
             print("update_thread did not exit in time")
 
     def populate_tables(self) -> None:
+        # Cleanup whatever is left off
         for gesture in self.gestures:
-            self.gesture_files[gesture] = self.get_gesture_files(gesture)
+            if self.gestures[gesture].accelerometer_figure:
+                self.gestures[gesture].accelerometer_figure.close()
+            if self.gestures[gesture].gyroscope_figure:
+                self.gestures[gesture].gyroscope_figure.close()
+        self.gestures.clear()
+
+        # Make new
+        gestures = get_gestures()
+        for gesture in gestures:
+            self.gestures[gesture] = GestureData()
             self.populate_table(gesture)
 
     def populate_table(self, gesture: str) -> None:
-        index = self.gestures.index(gesture)
-        print(f"{index = }, {gesture = }, {len(self.gesture_files[gesture]) = }")
+        index = list(self.gestures.keys()).index(gesture)
+        print(f"{index = }, {gesture = }")
 
-        self.gesture_name_label[gesture] = tk.Label(self.frame, text=gesture)
-        self.gesture_name_label[gesture].grid(
-            row=index * self.row_offset, column=0, sticky="nsew"
+        # The name of the gesture, aka folder name
+        self.gestures[gesture].name_label = tk.Label(self.frame, text=gesture)
+        self.gestures[gesture].name_label.grid(
+            row=index * self.ROW_OFFSET, column=0, sticky="nsew"
         )
 
-        self.gesture_counts_label[gesture] = tk.Label(self.frame)
-        self.gesture_counts_label[gesture].grid(
-            row=index * self.row_offset, column=1, sticky="nsew"
+        # The total number of samples files in the folder
+        self.gestures[gesture].counts_label = tk.Label(self.frame)
+        self.gestures[gesture].counts_label.grid(
+            row=index * self.ROW_OFFSET, column=1, sticky="nsew"
         )
 
-        self.gesture_selected_label[gesture] = tk.Label(self.frame, text="Selected: ")
-        self.gesture_selected_label[gesture].grid(
-            row=index * self.row_offset + 1, column=0, sticky="nsew"
+        # Label for the selection combo box
+        self.gestures[gesture].selected_label = tk.Label(self.frame, text="Selected: ")
+        self.gestures[gesture].selected_label.grid(
+            row=index * self.ROW_OFFSET + 1, column=0, sticky="nsew"
         )
 
-        self.gesture_selected_combobox[gesture] = tkAutocompleteCombobox(
+        # Combobox for selecting one of the sample file to view
+        self.gestures[gesture].selected_combobox = tkAutocompleteCombobox(
             self.frame, state="readonly"
         )
-        self.gesture_selected_combobox[gesture].set_completion_list(
-            self.gesture_files[gesture]
-        )
-        self.gesture_selected_combobox[gesture].grid(
-            row=index * self.row_offset + 1, column=1
+        self.gestures[gesture].selected_combobox.grid(
+            row=index * self.ROW_OFFSET + 1, column=1
         )
 
-        # Create figures and a canvas to draw on
-        self.accelerometer_figures[gesture] = tkPlotGraph(
+        # Create figure to draw gyroscope data
+        self.gestures[gesture].accelerometer_figure = tkPlotGraph(
             master=self.frame, title="Acceleration (G)"
         )
-        self.accelerometer_figures[gesture].grid(
-            row=index * self.row_offset, column=2, rowspan=self.row_offset
+        self.gestures[gesture].accelerometer_figure.grid(
+            row=index * self.ROW_OFFSET, column=2, rowspan=self.ROW_OFFSET
         )
-        self.accelerometer_figures[gesture].set_ylim(-4, 4)
+        self.gestures[gesture].accelerometer_figure.set_ylim(
+            -GRAPH_ACCEL_Y_LIMIT, GRAPH_ACCEL_Y_LIMIT
+        )
 
-        self.gyroscope_figures[gesture] = tkPlotGraph(
+        # Create figure to draw gyroscope data
+        self.gestures[gesture].gyroscope_figure = tkPlotGraph(
             master=self.frame, title="Angular Velocity (DPS)"
         )
-        self.gyroscope_figures[gesture].grid(
-            row=index * self.row_offset, column=3, rowspan=self.row_offset
+        self.gestures[gesture].gyroscope_figure.grid(
+            row=index * self.ROW_OFFSET, column=3, rowspan=self.ROW_OFFSET
         )
-        self.gyroscope_figures[gesture].set_ylim(-3000, 3000)
-
-        self.gesture_selected_samples_label[gesture] = tk.Label(self.frame)
-        self.gesture_selected_samples_label[gesture].grid(
-            row=index * self.row_offset + 2, column=1, sticky="nsew"
+        self.gestures[gesture].gyroscope_figure.set_ylim(
+            -GRAPH_GYRO_Y_LIMIT, GRAPH_GYRO_Y_LIMIT
         )
 
-        selected_gesture = self.gesture_selected_combobox[gesture].get()
-        if selected_gesture:
-            # load data to DataFrame
-            df = pd.read_csv(f"{savedata_folder_path}/{gesture}/{selected_gesture}")
+        # How many sample points are there for this data
+        self.gestures[gesture].selected_samples_label = tk.Label(self.frame)
+        self.gestures[gesture].selected_samples_label.grid(
+            row=index * self.ROW_OFFSET + 2, column=1, sticky="nsew"
+        )
 
-            self.accelerometer_figures[gesture].clear()
-            self.gyroscope_figures[gesture].clear()
-
-            # Load data to plot
-            for _, row in df.iterrows():
-                accelerometer_data = {
-                    "x-axis": float(row["aX"]),
-                    "y-axis": float(row["aY"]),
-                    "z-axis": float(row["aZ"]),
-                }
-                self.accelerometer_figures[gesture].append_dict(
-                    row["Time"], accelerometer_data
-                )
-
-                gyroscope_data = {
-                    "x-axis": float(row["gX"]),
-                    "y-axis": float(row["gY"]),
-                    "z-axis": float(row["gZ"]),
-                }
-                self.gyroscope_figures[gesture].append_dict(row["Time"], gyroscope_data)
-
-            self.accelerometer_figures[gesture].draw()
-            self.gyroscope_figures[gesture].draw()
+        # Draw graphs with the default selected sample
+        selected_gesture_sample = self.gestures[gesture].selected_combobox.get()
+        self.load_graph_data(gesture, selected_gesture_sample)
 
     def update_content(self, gesture: str) -> None:
-        self.gesture_counts_label[gesture].configure(
-            text=f"{len(self.gesture_files[gesture])} item"
+        # Count the number of samples in one gesture
+        self.gestures[gesture].counts_label.configure(
+            text=f"{len(self.gestures[gesture].selected_combobox.get_completion_list())} item"
         )
-        self.gesture_selected_combobox[gesture].set_completion_list(
-            self.gesture_files[gesture]
-        )
-        selected_gesture = self.gesture_selected_combobox[gesture].get()
 
+        # Get the selected file
+        selected_gesture_sample = self.gestures[gesture].selected_combobox.get()
+
+        # Skip of nothing is selected or the selection has not changed
         if (
-            not selected_gesture
-            or self.old_selected_gestures.get(gesture) == selected_gesture
+            not selected_gesture_sample
+            or self.gestures[gesture].selected_file == selected_gesture_sample
         ):
             return
-        self.old_selected_gestures[gesture] = self.gesture_selected_combobox[
-            gesture
-        ].get()
+
+        # Update selection and draw the updated sample data
+        self.gestures[gesture].selected_file = selected_gesture_sample
+        self.load_graph_data(gesture, selected_gesture_sample)
+
+    def load_graph_data(self, gesture: str, file_name: str) -> None:
+        # Skip if it is not a valid file
+        if not file_name:
+            return
 
         # load data to DataFrame
-        df = pd.read_csv(f"{savedata_folder_path}/{gesture}/{selected_gesture}")
+        df = pd.read_csv(f"{SAVEDATA_FOLDER_PATH}/{gesture}/{file_name}")
 
-        self.accelerometer_figures[gesture].clear()
-        self.gyroscope_figures[gesture].clear()
+        # Clear figure for reuse
+        self.gestures[gesture].accelerometer_figure.clear()
+        self.gestures[gesture].gyroscope_figure.clear()
 
         # Load data to plot
         for _, row in df.iterrows():
@@ -521,7 +526,7 @@ class DataViewerApp:
                 "y-axis": float(row["aY"]),
                 "z-axis": float(row["aZ"]),
             }
-            self.accelerometer_figures[gesture].append_dict(
+            self.gestures[gesture].accelerometer_figure.append_dict(
                 row["Time"], accelerometer_data
             )
 
@@ -530,16 +535,22 @@ class DataViewerApp:
                 "y-axis": float(row["gY"]),
                 "z-axis": float(row["gZ"]),
             }
-            self.gyroscope_figures[gesture].append_dict(row["Time"], gyroscope_data)
+            self.gestures[gesture].gyroscope_figure.append_dict(
+                row["Time"], gyroscope_data
+            )
 
-        self.accelerometer_figures[gesture].draw()
-        self.gyroscope_figures[gesture].draw()
-        self.gesture_selected_samples_label[gesture].configure(
+        self.gestures[gesture].accelerometer_figure.draw()
+        self.gestures[gesture].gyroscope_figure.draw()
+
+        # Show the number of samples for this graph
+        self.gestures[gesture].selected_samples_label.configure(
             text=f"{len(df)} samples"
         )
 
-    def get_gesture_files(self, gesture: str) -> list[str]:
-        folder_path = f"{savedata_folder_path}/{gesture}"
+    # Returns a list of files names that is inside the [gesture] folder
+    @staticmethod
+    def get_gesture_files(gesture: str) -> list[str]:
+        folder_path = f"{SAVEDATA_FOLDER_PATH}/{gesture}"
         if not os.path.exists(folder_path) or not os.listdir(folder_path):
             return []
         else:
