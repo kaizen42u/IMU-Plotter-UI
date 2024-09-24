@@ -1,10 +1,11 @@
 from tkinter import Misc
 
 import matplotlib
-from matplotlib.axes import Axes
+import matplotlib.lines
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import deque
+import numpy as np
 
 matplotlib.use("Agg")
 
@@ -18,6 +19,7 @@ class tkPlotGraph:
         timespan: int | float | None = None,
         max_samples: int | None = None,
         title: str = "Graph",
+        show_percentiles: bool = False,
     ) -> None:
 
         # Create a figure and a canvas to draw on
@@ -40,6 +42,12 @@ class tkPlotGraph:
             self.ax.set_ylim(self.low_ylim, self.high_ylim)
         self.ax.grid()
 
+        # Percentiles
+        self.show_percentiles = show_percentiles
+        self.high_percentile_line = self.ax.axhline(color="#D3D3D3", linestyle="--")
+        self.median_line = self.ax.axhline(color="#D3D3D3", linestyle="--")
+        self.low_percentile_line = self.ax.axhline(color="#D3D3D3", linestyle="--")
+
         # Initialize line objects
         self.lines = {}
 
@@ -58,6 +66,9 @@ class tkPlotGraph:
         self.lines.clear()
         self.ax.clear()  # Clear the axes
         self.ax.set_title(self.title)  # Reset the title
+        self.high_percentile_line = self.ax.axhline(color="gray", linestyle="--")
+        self.median_line = self.ax.axhline(color="gray", linestyle="--")
+        self.low_percentile_line = self.ax.axhline(color="gray", linestyle="--")
         self.ax.grid()  # Reset the grid
 
     # Appends timestamp and data to the list, also clears old data
@@ -128,11 +139,41 @@ class tkPlotGraph:
         self.low_ylim = low
         self.high_ylim = high
 
+    def calculate_percentiles(self):
+        all_values = []
+
+        for series in self.data_series.values():
+            all_values.extend(series)
+
+        if all_values:
+            self.high_percentile = np.percentile(all_values, 75)
+            self.median = np.percentile(all_values, 50)
+            self.low_percentile = np.percentile(all_values, 25)
+        else:
+            self.high_percentile = 0
+            self.median = 0
+            self.low_percentile = 0
+
     # Draw graph on canvas
     def draw(self) -> None:
         if not self.data_modified:
             return
 
+        # Draw percentile lines
+        self.calculate_percentiles()
+        if self.show_percentiles:
+            self.high_percentile_line.set_ydata(np.array([self.high_percentile]))
+            self.median_line.set_ydata(np.array([self.median]))
+            self.low_percentile_line.set_ydata(np.array([self.low_percentile]))
+            self.high_percentile_line.set_visible(True)
+            self.median_line.set_visible(True)
+            self.low_percentile_line.set_visible(True)
+        else:
+            self.high_percentile_line.set_visible(False)
+            self.median_line.set_visible(False)
+            self.low_percentile_line.set_visible(False)
+
+        # Draw data
         for label, series in self.data_series.items():
             self.lines[label].set_data(self.timestamp, series)
 
@@ -159,15 +200,15 @@ def main():
 
     root = Tk()
 
-    figure1 = tkPlotGraph(master=root, title="Test Append Dict")
+    figure1 = tkPlotGraph(master=root, timespan=3000, title="Test Append Dict")
     figure1.grid(row=0, column=0)
     figure1.set_ylim(-4, 4)
 
-    figure2 = tkPlotGraph(master=root, title="Test Append List")
+    figure2 = tkPlotGraph(master=root, timespan=3000, title="Test Append List")
     figure2.grid(row=0, column=1)
     figure2.set_ylim(-4, 4)
 
-    figure3 = tkPlotGraph(master=root, title="Test Append Single")
+    figure3 = tkPlotGraph(master=root, timespan=3000, title="Test Append Single")
     figure3.grid(row=0, column=2)
     figure3.set_ylim(-4, 4)
 
