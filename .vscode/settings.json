@@ -18,6 +18,7 @@
         "keysym",
         "linestyle",
         "linewidth",
+        "ndarray",
         "overlined",
         "padx",
         "pady",
