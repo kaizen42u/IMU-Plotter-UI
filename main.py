@@ -285,7 +285,7 @@ class SerialPlotterApp:
         if is_imu_data and not self.show_imu_data:
             return
 
-        is_model_result: bool = reading.startswith("[Result]")
+        is_model_result: bool = reading.startswith("[Res]")
         if is_model_result and not self.show_model_result:
             return
 
