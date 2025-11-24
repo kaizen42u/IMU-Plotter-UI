@@ -51,6 +51,7 @@ class SerialPlotterApp:
     def __init__(self, root: tk.Misc) -> None:
         self.root: tk.Misc = root
         self.killed: bool = False
+        self.stop_event = threading.Event()
         self.show_imu_data: bool = True
         self.show_model_result: bool = True
 
@@ -84,7 +85,8 @@ class SerialPlotterApp:
         )
 
         # Create threads to draw figures and serial port reading
-        self.draw_graphs_thread = threading.Thread(target=self.draw_graphs)
+        # self.draw_graphs_thread = threading.Thread(target=self.draw_graphs)
+        self.draw_graphs_thread = threading.Thread(target=self.draw_graphs, daemon=True)
         self.draw_graphs_thread.start()
 
     def setup_ui(self) -> None:
@@ -190,6 +192,7 @@ class SerialPlotterApp:
     def close(self) -> None:
         # Flag the process as dead and close serial port
         self.killed = True
+        self.stop_event.set()
         self.serial.close()
 
         self.draw_graphs_thread.join(timeout=1)
@@ -318,9 +321,12 @@ class SerialPlotterApp:
         self.gyroscope_figure.clear()
 
     def draw_graphs(self) -> None:
-        while not self.killed:
-            sleep(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL)
-
+        # while not self.killed:
+            # sleep(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL)
+        while not self.stop_event.is_set():
+            # wait returns immediately if stop_event set, otherwise sleeps the interval
+            self.stop_event.wait(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL)
+            
             # Update graph
             try:
                 self.accelerometer_figure.draw()
@@ -355,6 +361,7 @@ class DataViewerApp:
     def __init__(self, root: tk.Misc) -> None:
         self.root: tk.Misc = root
         self.killed: bool = False
+        self.stop_event = threading.Event()
         self.gestures: dict[str, GestureData] = {}
         self.ROW_OFFSET: int = 4
 
@@ -362,11 +369,22 @@ class DataViewerApp:
         self.populate_tables()
 
         self.update_thread = threading.Thread(target=self.update)
+        self.update_thread.daemon = True
         self.update_thread.start()
 
     def update(self) -> None:
-        while not self.killed:
-            sleep(THREAD_DATA_VIEWER_UPDATE_INTERVAL)
+        # while not self.killed:
+            # sleep(THREAD_DATA_VIEWER_UPDATE_INTERVAL)
+        while not self.stop_event.is_set():
+            #self.stop_event.wait(THREAD_DATA_VIEWER_UPDATE_INTERVAL)
+            # wait returns True immediately if stop_event was set, otherwise sleeps the interval
+            if self.stop_event.wait(THREAD_DATA_VIEWER_UPDATE_INTERVAL):
+                break
+
+            # Stop requested? double-check before doing potentially-long work
+            if self.stop_event.is_set():
+                break
+
             self.update_contents()
 
             # If new gesture is added, re-populate tables
@@ -405,6 +423,7 @@ class DataViewerApp:
 
     def close(self):
         self.killed = True
+        self.stop_event.set()
 
         self.update_thread.join(timeout=1)
         if self.update_thread.is_alive():
