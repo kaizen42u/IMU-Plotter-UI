@@ -26,10 +26,11 @@ matplotlib.use("Agg")
 
 SAVEDATA_FOLDER_PATH = "./savedata"
 TERMINAL_MAX_WIDTH = 180
-GRAPH_MAX_SAMPLES = 120
-GRAPH_ACCEL_Y_LIMIT = 4
-GRAPH_GYRO_Y_LIMIT = 3000
+GRAPH_MAX_SAMPLES = 50
+GRAPH_ACCEL_Y_LIMIT = 16
+GRAPH_GYRO_Y_LIMIT = 200
 SERIAL_IMU_DATA_REGEX = r"\[IMU\] \[\s*(\d+) ms\], Acc: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] G, Gyro: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] DPS"
+SERIAL_IMU_BNO05_DATA_REGEX = r"(?:I\s*\(\s*(\d+)\s*\)\s*\w+:\s*)?L\.Accel\s*\(m/s\)\s*-\s*x:\s*([-+]?\d+(?:\.\d+)?)\s*y:\s*([-+]?\d+(?:\.\d+)?)\s*z:\s*([-+]?\d+(?:\.\d+)?)\s*\|\s*Euler\s*\(deg\)\s*-\s*yaw:\s*([-+]?\d+(?:\.\d+)?)\s*pitch:\s*([-+]?\d+(?:\.\d+)?)\s*roll:\s*([-+]?\d+(?:\.\d+)?)"
 THREAD_PLOTTER_DRAW_GRAPH_INTERVAL = 0.05
 THREAD_DATA_VIEWER_UPDATE_INTERVAL = 0.10
 
@@ -123,7 +124,7 @@ class SerialPlotterApp:
 
         # Create figure to draw accelerometer data
         self.accelerometer_figure = tkPlotGraph(
-            master=self.root, title="Acceleration (G)", max_samples=GRAPH_MAX_SAMPLES
+            master=self.root, title="Linear Acceleration (G)", max_samples=GRAPH_MAX_SAMPLES
         )
         self.accelerometer_figure.grid(row=2, column=0)
         self.accelerometer_figure.set_ylim(
@@ -133,7 +134,7 @@ class SerialPlotterApp:
         # Create figure to draw gyroscope data
         self.gyroscope_figure = tkPlotGraph(
             master=self.root,
-            title="Angular Velocity (DPS)",
+            title="Euler Angle (Degree)",
             max_samples=GRAPH_MAX_SAMPLES,
         )
         self.gyroscope_figure.grid(row=2, column=1)
@@ -284,7 +285,10 @@ class SerialPlotterApp:
         self.model_result_toggle_button.configure(text=display_text)
 
     def update_terminal(self, reading: str) -> None:
-        is_imu_data: bool = reading.startswith("[IMU]")
+        is_imu_data: bool = bool(
+            re.search(SERIAL_IMU_DATA_REGEX, reading)
+            or re.search(SERIAL_IMU_BNO05_DATA_REGEX, reading)
+        )
         if is_imu_data and not self.show_imu_data:
             return
 
@@ -295,26 +299,46 @@ class SerialPlotterApp:
         self.terminal.write(reading + "\n")
 
     def update_graphs(self, reading: str) -> None:
-        match = re.search(
-            SERIAL_IMU_DATA_REGEX,
-            reading,
-        )
+        match = re.search(SERIAL_IMU_BNO05_DATA_REGEX, reading)
         if match:
-            time, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = match.groups()
+            groups = match.groups()
+
+            # groups layout: (optional_time, acc_x, acc_y, acc_z, yaw, pitch, roll)
+            # optional_time may be None if the prefix is not present
+            if len(groups) == 7:
+                time_group = groups[0]
+                acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = groups[1:]
+            else:
+                # unexpected group count — fall back to using all groups as values
+                time_group = None
+                acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = groups
+
+            # Use provided time if present, otherwise use current epoch milliseconds
+            if time_group is None:
+                try:
+                    time_val = int(datetime.now().timestamp() * 1000)
+                except Exception:
+                    time_val = 0
+            else:
+                # Some logs include timestamps like 110322 (ms). Cast to int.
+                try:
+                    time_val = int(time_group)
+                except Exception:
+                    time_val = int(datetime.now().timestamp() * 1000)
 
             accelerometer_data = {
                 "x-axis": float(acc_x),
                 "y-axis": float(acc_y),
                 "z-axis": float(acc_z),
             }
-            self.accelerometer_figure.append_dict(int(time), accelerometer_data)
+            self.accelerometer_figure.append_dict(int(time_val), accelerometer_data)
 
             gyroscope_data = {
                 "x-axis": float(gyro_x),
                 "y-axis": float(gyro_y),
                 "z-axis": float(gyro_z),
             }
-            self.gyroscope_figure.append_dict(int(time), gyroscope_data)
+            self.gyroscope_figure.append_dict(int(time_val), gyroscope_data)
 
     def reset_graphs(self) -> None:
         self.accelerometer_figure.clear()
