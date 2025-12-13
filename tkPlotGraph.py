@@ -1,11 +1,12 @@
 from tkinter import Misc
 
+import threading
 import matplotlib
-import matplotlib.lines
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import deque
 import numpy as np
+import time
 
 matplotlib.use("Agg")
 
@@ -16,7 +17,7 @@ class tkPlotGraph:
         master: Misc,
         figsize: tuple[int, int] = (5, 4),
         dpi: int = 80,
-        timespan: int | float | None = None,
+        timespan: float | None = None,
         max_samples: int | None = None,
         title: str = "Graph",
         show_percentiles: bool = False,
@@ -25,7 +26,7 @@ class tkPlotGraph:
         # Create a figure and a canvas to draw on
         self.figure = plt.figure(figsize=figsize, dpi=dpi)
         self.canvas = FigureCanvasTkAgg(self.figure, master=master)
-        self.timespan = timespan
+        self.timespan: float | None = timespan
         self.max_samples = max_samples
         self.title = title
 
@@ -48,8 +49,8 @@ class tkPlotGraph:
         self.median_line = self.ax.axhline(color="#D3D3D3", linestyle="--")
         self.low_percentile_line = self.ax.axhline(color="#D3D3D3", linestyle="--")
 
-        # Initialize line objects
         self.lines = {}
+        self.start_time = time.time()
 
     # Partial function of tk.grid()
     def grid(self, row: int = 0, column: int = 0, **kwargs) -> None:
@@ -64,17 +65,15 @@ class tkPlotGraph:
         self.data_modified = True
         self.timestamp.clear()
         self.lines.clear()
-        self.ax.clear()  # Clear the axes
-        self.ax.set_title(self.title)  # Reset the title
+        self.ax.clear()
+        self.ax.set_title(self.title)
         self.high_percentile_line = self.ax.axhline(color="gray", linestyle="--")
         self.median_line = self.ax.axhline(color="gray", linestyle="--")
         self.low_percentile_line = self.ax.axhline(color="gray", linestyle="--")
         self.ax.grid()  # Reset the grid
 
     # Appends timestamp and data to the list, also clears old data
-    def append_dict(
-        self, timestamp: int | float, data_dict: dict[str, int | float]
-    ) -> None:
+    def append_dict(self, timestamp: float, data_dict: dict[str, float]) -> None:
         self.timestamp.append(timestamp)
         for label, data in data_dict.items():
             if label not in self.data_series:
@@ -87,7 +86,7 @@ class tkPlotGraph:
         self.data_modified = True
 
     # Appends timestamp and a list of data to the list, also clears old data
-    def append_list(self, timestamp: int | float, data_list: list[int | float]) -> None:
+    def append_list(self, timestamp: float, data_list: list[float]) -> None:
         self.timestamp.append(timestamp)
         for i, data in enumerate(data_list):
             label = f"Series {i+1}"
@@ -101,7 +100,7 @@ class tkPlotGraph:
         self.data_modified = True
 
     # Appends timestamp and a single data point to the list, also clears old data
-    def append_single(self, timestamp: int | float, data: int | float) -> None:
+    def append_single(self, timestamp: float, data: float) -> None:
         self.timestamp.append(timestamp)
         label = "Series 1"
         if label not in self.data_series:
@@ -113,12 +112,12 @@ class tkPlotGraph:
         self.limit_sample_size()
         self.data_modified = True
 
-    # Remove data older than x milliseconds
-    def remove_old_data(self, timestamp: int | float) -> None:
+    # Remove data older than x milliseconds, keep one extra sample for drawing
+    def remove_old_data(self, timestamp: float) -> None:
         if self.timespan is None:
             return
 
-        while self.timestamp and self.timestamp[0] < timestamp - self.timespan:
+        while len(self.timestamp) > 1 and self.timestamp[1] < timestamp - self.timespan:
             self.timestamp.popleft()
             for series in self.data_series.values():
                 series.popleft()
@@ -140,8 +139,10 @@ class tkPlotGraph:
         self.high_ylim = high
 
     def calculate_percentiles(self):
-        all_values = []
+        if not self.show_percentiles:
+            return  # Skip calculation if percentiles are not shown
 
+        all_values = []
         for series in self.data_series.values():
             all_values.extend(series)
 
@@ -154,31 +155,40 @@ class tkPlotGraph:
             self.median = 0
             self.low_percentile = 0
 
+    def update_percentile_lines(self):
+        if not self.show_percentiles:
+            self.high_percentile_line.set_visible(False)
+            self.median_line.set_visible(False)
+            self.low_percentile_line.set_visible(False)
+            return
+
+        self.high_percentile_line.set_ydata(np.array([self.high_percentile]))
+        self.median_line.set_ydata(np.array([self.median]))
+        self.low_percentile_line.set_ydata(np.array([self.low_percentile]))
+        self.high_percentile_line.set_visible(True)
+        self.median_line.set_visible(True)
+        self.low_percentile_line.set_visible(True)
+
     # Draw graph on canvas
     def draw(self) -> None:
         if not self.data_modified:
             return
 
-        # Draw percentile lines
+        # Calculate percentiles only if needed
         self.calculate_percentiles()
-        if self.show_percentiles:
-            self.high_percentile_line.set_ydata(np.array([self.high_percentile]))
-            self.median_line.set_ydata(np.array([self.median]))
-            self.low_percentile_line.set_ydata(np.array([self.low_percentile]))
-            self.high_percentile_line.set_visible(True)
-            self.median_line.set_visible(True)
-            self.low_percentile_line.set_visible(True)
-        else:
-            self.high_percentile_line.set_visible(False)
-            self.median_line.set_visible(False)
-            self.low_percentile_line.set_visible(False)
+
+        # Update percentile lines
+        self.update_percentile_lines()
 
         # Draw data
         for label, series in self.data_series.items():
             self.lines[label].set_data(self.timestamp, series)
 
-        # Rescale the x-axis to fit the new data
-        if len(self.timestamp) >= 2:
+        # Rescale the x-axis to fit the new data or timespan
+        if self.timespan is not None and len(self.timestamp) > 0:
+            latest_time = self.timestamp[-1]
+            self.ax.set_xlim(latest_time - self.timespan, latest_time)
+        elif len(self.timestamp) >= 2:
             self.ax.set_xlim(self.timestamp[0], self.timestamp[-1])
 
         # Rescale the y-axis to fit the new data
@@ -215,11 +225,13 @@ def main():
     start_time = time.time()
 
     def update_figure_data():
-        update_figure1_data()
-        update_figure2_data()
-        update_figure3_data()
         draw_figures()
-        root.after(100, update_figure_data)
+        while True:
+            update_figure1_data()
+            update_figure2_data()
+            update_figure3_data()
+            draw_figures()
+            time.sleep(0.1)
 
     def draw_figures():
         figure1.draw()
@@ -252,8 +264,10 @@ def main():
         data = random.uniform(-3, 3)
         figure3.append_single(time_since_start_ms, data)
 
-    update_figure_data()
-    draw_figures()
+    # Start the data update thread
+    data_thread = threading.Thread(target=update_figure_data, daemon=True)
+    data_thread.start()
+
     root.mainloop()
 
 

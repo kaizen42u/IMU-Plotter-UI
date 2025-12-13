@@ -33,6 +33,7 @@
         "serr",
         "softmax",
         "Striked",
+        "textvariable",
         "tflite",
         "timespan",
         "tkagg",
