@@ -106,7 +106,7 @@ class SerialPlotterApp:
 
         # Create the serial terminal
         self.terminal = tkTerminal(master=self.root, width=TERMINAL_MAX_WIDTH)
-        self.terminal.grid(row=1, column=0, padx=5) # no sticky
+        self.terminal.grid(row=1, column=0, sticky="ns", padx=5)
 
         # Create a frame for the send command section
         self.send_command_frame = tk.Frame(master=self.root)
@@ -133,10 +133,10 @@ class SerialPlotterApp:
         self.send_command_button.grid(row=0, column=2, padx=5)
 
         # Create a frame to hold graphs and options
-        self.graphs_frame = tk.Frame(master=self.root)
+        self.graphs_frame = tk.Frame(master=self.root, bg="#E0E8F0")
         self.graphs_frame.grid(row=3, column=0, sticky="ew", padx=5)
-        self.graphs_frame.grid_columnconfigure(0, weight=1)
-        self.graphs_frame.grid_columnconfigure(1, weight=1)
+        # self.graphs_frame.grid_columnconfigure(0, weight=1)
+        # self.graphs_frame.grid_columnconfigure(1, weight=1)
 
         # Create figure to draw accelerometer data
         self.accelerometer_figure = tkPlotGraph(
@@ -159,12 +159,15 @@ class SerialPlotterApp:
         # Create a frame containing options
         self.options_frame = tk.Frame(master=self.graphs_frame)
         self.options_frame.grid_rowconfigure(index=0, weight=1)
-        self.options_frame.grid_columnconfigure(index=0, weight=1)
-        self.options_frame.grid(row=0, column=2, sticky="ew", padx=2)
+        self.options_frame.grid(row=0, column=2, sticky="ew", padx=(2, 2))
+
+        # Create a frame for buttons
+        self.buttons_frame = tk.Frame(master=self.options_frame)
+        self.buttons_frame.grid(row=0, column=0, sticky="w")
 
         # Create show/hide IMU data button
         self.imu_data_toggle_button = tk.Button(
-            master=self.options_frame,
+            master=self.buttons_frame,
             text="Hide IMU data",
             command=self.imu_data_toggle,
         )
@@ -173,7 +176,6 @@ class SerialPlotterApp:
 
         # Configure the grid to expand
         self.root.grid_rowconfigure(1, weight=1)
-        self.root.grid_rowconfigure(3, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
     def close(self) -> None:
