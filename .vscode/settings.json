@@ -22,6 +22,7 @@
         "ipynb",
         "iterrows",
         "keysym",
+        "ledc",
         "linestyle",
         "linewidth",
         "ndarray",
