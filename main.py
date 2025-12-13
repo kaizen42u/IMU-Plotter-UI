@@ -35,10 +35,12 @@ class SerialPlotterApp:
         self.killed: bool = False
         self.stop_event = threading.Event()
         self.show_imu_data: bool = True
-        
-        self._reconnect_enabled: bool = False  # Only enabled after manual connect, disabled on manual disconnect
+
+        self._reconnect_enabled: bool = (
+            False  # Only enabled after manual connect, disabled on manual disconnect
+        )
         self._reconnect_attempts: int = 0
-        
+
         # Logging variables
         self.logging_enabled: bool = False
         self.log_file_path: Path | None = None
@@ -47,7 +49,7 @@ class SerialPlotterApp:
         self.serial: serialHandler = serialHandler()
 
         self.setup_ui()
-        
+
         # Enable logging by default
         self.logging_var.set(True)
         self.start_logging()
@@ -73,7 +75,9 @@ class SerialPlotterApp:
         self.control_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
         # Create a label for COM port selection
-        self.port_selection_label = tk.Label(master=self.control_frame, text="COM Port:")
+        self.port_selection_label = tk.Label(
+            master=self.control_frame, text="COM Port:"
+        )
         self.port_selection_label.grid(row=0, column=0, padx=5)
 
         # Create a dropdown menu for available ports
@@ -90,7 +94,17 @@ class SerialPlotterApp:
         self.baudrate_combobox = tkAutocompleteCombobox(
             master=self.control_frame, sort_key=lambda x: int(x)
         )
-        common_baudrates = ["9600", "14400", "19200", "38400", "57600", "115200", "230400", "460800", "921600"]
+        common_baudrates = [
+            "9600",
+            "14400",
+            "19200",
+            "38400",
+            "57600",
+            "115200",
+            "230400",
+            "460800",
+            "921600",
+        ]
         self.baudrate_combobox.set_completion_list(common_baudrates)
         self.baudrate_combobox.set("115200")
         self.baudrate_combobox.grid(row=0, column=3, padx=(5, 15))
@@ -134,20 +148,20 @@ class SerialPlotterApp:
         self.send_command_frame = tk.Frame(master=self.master)
         self.send_command_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
         self.send_command_frame.grid_columnconfigure(1, weight=1)
-        
+
         # Create a label for the send command textfield
         self.send_command_label = tk.Label(
             master=self.send_command_frame, text="Send Command:"
         )
         self.send_command_label.grid(row=0, column=0, padx=5)
-        
+
         # Create a textfield for sending commands
         self.send_command_entry = tk.Entry(master=self.send_command_frame)
         self.send_command_entry.grid(row=0, column=1, sticky="ew", padx=5)
-        
+
         # Bind Enter key to send command
         self.send_command_entry.bind("<Return>", lambda event: self.send_command())
-        
+
         # Create a send button
         self.send_command_button = tk.Button(
             master=self.send_command_frame, text="Send", command=self.send_command
@@ -162,7 +176,9 @@ class SerialPlotterApp:
 
         # Create figure to draw accelerometer data
         self.accelerometer_figure = tkPlotGraph(
-            master=self.graphs_frame, title="Linear Acceleration (G)", max_samples=GRAPH_MAX_SAMPLES
+            master=self.graphs_frame,
+            title="Linear Acceleration (G)",
+            max_samples=GRAPH_MAX_SAMPLES,
         )
         self.accelerometer_figure.grid(row=0, column=0, padx=2)
         self.accelerometer_figure.set_ylim(
@@ -227,9 +243,13 @@ class SerialPlotterApp:
             # Open log file for writing
             self.log_file_handle = open(self.log_file_path, "w")
             self.logging_enabled = True
-            self.terminal_show_message(f"{ANSI.bGreen}Logging started: {self.log_file_path}{ANSI.default}")
+            self.terminal_show_message(
+                f"{ANSI.bGreen}Logging started: {self.log_file_path}{ANSI.default}"
+            )
         except Exception as e:
-            self.terminal_show_message(f"{ANSI.bRed}Failed to start logging: {e}{ANSI.default}")
+            self.terminal_show_message(
+                f"{ANSI.bRed}Failed to start logging: {e}{ANSI.default}"
+            )
             self.logging_var.set(False)
 
     def stop_logging(self) -> None:
@@ -241,7 +261,9 @@ class SerialPlotterApp:
             self.log_file_handle = None
             self.terminal_show_message(f"{ANSI.bGreen}Logging stopped{ANSI.default}")
         except Exception as e:
-            self.terminal_show_message(f"{ANSI.bRed}Failed to stop logging: {e}{ANSI.default}")
+            self.terminal_show_message(
+                f"{ANSI.bRed}Failed to stop logging: {e}{ANSI.default}"
+            )
 
     def write_log(self, data: str, direction: str) -> None:
         """Write data to session log. direction should be 'tx' or 'rx'."""
@@ -268,7 +290,7 @@ class SerialPlotterApp:
         # Stop logging if active
         if self.logging_enabled:
             self.stop_logging()
-        
+
         # Flag the process as dead and close serial port
         self.killed = True
         self.stop_event.set()
@@ -277,13 +299,11 @@ class SerialPlotterApp:
     def serial_line_received(self, line: str) -> None:
         self.update_graphs(line)
         self.update_terminal(line)
-        
+
         # Log asynchronously to not block graph/terminal updates
         if self.logging_enabled:
             threading.Thread(
-                target=self.write_log,
-                args=(line, " R"),
-                daemon=True
+                target=self.write_log, args=(line, " R"), daemon=True
             ).start()
 
     def serial_log(self, message: str) -> None:
@@ -296,7 +316,7 @@ class SerialPlotterApp:
         # Update button state in case of disconnect callback
         self.serial_connect_toggle_button_update()
         print(f"Ports changed: {ports}")
-        
+
         # Check if previously selected port came back online and trigger reconnect
         selected_port = self.port_selection_combobox.get()
         if (
@@ -315,7 +335,7 @@ class SerialPlotterApp:
     def attempt_reconnect(self) -> None:
         selected_port = self.port_selection_combobox.get()
         current_ports = self.serial.get_ports()
-        
+
         if (
             selected_port
             and selected_port in current_ports
@@ -331,31 +351,39 @@ class SerialPlotterApp:
                 self._reconnect_attempts = 0
             except Exception as e:
                 self._reconnect_attempts += 1
-                print(f"Auto-reconnect failed (attempt {self._reconnect_attempts}): {e}")
+                print(
+                    f"Auto-reconnect failed (attempt {self._reconnect_attempts}): {e}"
+                )
                 if self._reconnect_attempts < 5:
                     self.master.after(100, self.attempt_reconnect)
                 else:
-                    print(f"Auto-reconnect failed after 5 attempts. Manual reconnection required.")
+                    print(
+                        f"Auto-reconnect failed after 5 attempts. Manual reconnection required."
+                    )
                     self._reconnect_attempts = 0
 
     def serial_connect_toggle_button_update(self) -> None:
         display_text = "Disconnect" if self.serial.is_connected() else "Connect"
         self.serial_connect_toggle_button.configure(text=display_text)
-        
+
         # Disable/enable COM port and baudrate selection based on connection state
         is_connected = self.serial.is_connected()
-        self.port_selection_combobox.configure(state="disabled" if is_connected else "readonly")
+        self.port_selection_combobox.configure(
+            state="disabled" if is_connected else "readonly"
+        )
         self.baudrate_combobox.configure(state="disabled" if is_connected else "normal")
-        
+
         # Update ESC control button state
-        if hasattr(self, 'esc_control_app') and self.esc_control_app is not None:
+        if hasattr(self, "esc_control_app") and self.esc_control_app is not None:
             self.esc_control_app.update_esc_controls_state()
 
     def serial_connect_toggle(self) -> None:
         # If already connected, disconnect
         if self.serial.is_connected():
             self.serial.disconnect()
-            self._reconnect_enabled = False  # Disable auto-reconnect on manual disconnect
+            self._reconnect_enabled = (
+                False  # Disable auto-reconnect on manual disconnect
+            )
             self.serial_connect_toggle_button_update()
             print("Auto-reconnect disabled (manual disconnect)")
             return
@@ -366,9 +394,11 @@ class SerialPlotterApp:
             # Get baudrate from combobox, default to 115200 if not set
             baudrate_str = self.baudrate_combobox.get()
             baudrate = int(baudrate_str) if baudrate_str else 115200
-            
+
             self.serial.connect(self.port_selection_combobox.get(), baudrate=baudrate)
-            self._reconnect_enabled = True  # Enable auto-reconnect on successful manual connect
+            self._reconnect_enabled = (
+                True  # Enable auto-reconnect on successful manual connect
+            )
             self._reconnect_attempts = 0  # Reset attempt counter
             self.serial_connect_toggle_button_update()
             print("Auto-reconnect enabled")
@@ -389,7 +419,7 @@ class SerialPlotterApp:
 
     def open_esc_control(self) -> None:
         """Toggle ESC control window visibility."""
-        if not hasattr(self, 'esc_control_app') or self.esc_control_app is None:
+        if not hasattr(self, "esc_control_app") or self.esc_control_app is None:
             self.esc_control_app = ESCControlApp(parent=self)
         else:
             # Toggle visibility
@@ -399,9 +429,7 @@ class SerialPlotterApp:
                 self.esc_control_app.window.deiconify()
 
     def update_terminal(self, reading: str) -> None:
-        is_imu_data: bool = bool(
-            re.search(SERIAL_IMU_BNO085_DATA_REGEX, reading)
-        )
+        is_imu_data: bool = bool(re.search(SERIAL_IMU_BNO085_DATA_REGEX, reading))
         if is_imu_data and not self.show_imu_data:
             return
 
@@ -458,26 +486,28 @@ class SerialPlotterApp:
         command = self.send_command_entry.get()
         if not command:
             return
-        
+
         if not self.serial.is_connected():
-            self.terminal_show_message(f"{ANSI.bRed}Error: Serial port is not connected{ANSI.default}")
+            self.terminal_show_message(
+                f"{ANSI.bRed}Error: Serial port is not connected{ANSI.default}"
+            )
             return
-        
+
         # Append newline if not already present
         if not command.endswith("\n"):
             command += "\n"
-        
+
         success = self.serial.send(command)
-        
+
         if success:
             threading.Thread(
-                target=self._async_log_and_display,
-                args=(command, True),
-                daemon=True
+                target=self._async_log_and_display, args=(command, True), daemon=True
             ).start()
         else:
-            self.terminal_show_message(f"{ANSI.bRed}Error: Failed to send command{ANSI.default}")
-        
+            self.terminal_show_message(
+                f"{ANSI.bRed}Error: Failed to send command{ANSI.default}"
+            )
+
         # Keep textfield populated but select all text for quick resend
         self.send_command_entry.select_range(0, tk.END)
         self.send_command_entry.focus()
@@ -486,10 +516,13 @@ class SerialPlotterApp:
         try:
             if is_tx:
                 self.write_log(command, "T ")
-            
-            self.master.after(0, lambda: self.terminal_show_message(
-                f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}"
-            ))
+
+            self.master.after(
+                0,
+                lambda: self.terminal_show_message(
+                    f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}"
+                ),
+            )
         except Exception as e:
             print(f"[W] Error in async_log_and_display: {e}")
 
@@ -498,7 +531,7 @@ class SerialPlotterApp:
             # Use wait() return value to break immediately if stop_event is set
             if self.stop_event.wait(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL):
                 break
-            
+
             # Update graph only if data was modified to reduce CPU usage
             try:
                 if self.accelerometer_figure.data_modified:
@@ -515,19 +548,36 @@ class SerialPlotterApp:
         print(message)
 
 
-
 class ESCControlApp:
     # GPIO options from GPIO0-GPIO21 and GPIO26-GPIO48
-    GPIO_OPTIONS: list[str] = [f"GPIO{i}" for i in range(22)] + [f"GPIO{i}" for i in range(26, 49)]
+    GPIO_OPTIONS: list[str] = [f"GPIO{i}" for i in range(22)] + [
+        f"GPIO{i}" for i in range(26, 49)
+    ]
     FREQUENCY_OPTIONS: list[str] = ["50Hz", "100Hz", "200Hz", "300Hz"]
     DIRECTION_OPTIONS: list[str] = ["Normal", "Inverted"]
-    
+
     # Default ESC configuration
     DEFAULT_ESC_CONFIG: list[dict[str, str | list[int]]] = [
-        {"gpio": "GPIO9", "direction": "Normal", "calibration": [1000, 1442, 1500, 1586, 2000]},   # ESC 1
-        {"gpio": "GPIO10", "direction": "Inverted", "calibration": [1000, 1444, 1500, 1551, 2000]},   # ESC 2
-        {"gpio": "GPIO11", "direction": "Normal", "calibration": [1000, 1440, 1500, 1556, 2000]},  # ESC 3
-        {"gpio": "GPIO12", "direction": "Inverted", "calibration": [1000, 1492, 1500, 1514, 2000]},   # ESC 4
+        {
+            "gpio": "GPIO9",
+            "direction": "Normal",
+            "calibration": [1000, 1442, 1500, 1586, 2000],
+        },  # ESC 1
+        {
+            "gpio": "GPIO10",
+            "direction": "Inverted",
+            "calibration": [1000, 1444, 1500, 1551, 2000],
+        },  # ESC 2
+        {
+            "gpio": "GPIO11",
+            "direction": "Normal",
+            "calibration": [1000, 1440, 1500, 1556, 2000],
+        },  # ESC 3
+        {
+            "gpio": "GPIO12",
+            "direction": "Inverted",
+            "calibration": [1000, 1492, 1500, 1514, 2000],
+        },  # ESC 4
     ]
 
     def __init__(self, parent: SerialPlotterApp) -> None:
@@ -535,12 +585,14 @@ class ESCControlApp:
         self.window: tk.Toplevel = tk.Toplevel(parent.master)
         self.window.title("ESC Control")
         self.window.geometry("700x820")
-        
+
         # Handle window close to hide instead of destroy
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
-        
+
         # Store ESC configurations with defaults
-        self.esc_configs: list[dict[str, str | list[int]]] = [self.DEFAULT_ESC_CONFIG[i].copy() for i in range(4)]
+        self.esc_configs: list[dict[str, str | list[int]]] = [
+            self.DEFAULT_ESC_CONFIG[i].copy() for i in range(4)
+        ]
 
         # Create main frame with scrollbar
         main_frame: tk.Frame = tk.Frame(master=self.window)
@@ -550,14 +602,20 @@ class ESCControlApp:
         self.esc_gpio_comboboxes: list[ttk.Combobox | None] = [None] * 4
         self.esc_direction_comboboxes: list[ttk.Combobox | None] = [None] * 4
         self.esc_initialized: list[bool] = [False] * 4  # Track initialization state
-        self.esc_selected: list[tk.BooleanVar] = [tk.BooleanVar(value=True) for _ in range(4)]  # Track selected state (default selected)
+        self.esc_selected: list[tk.BooleanVar] = [
+            tk.BooleanVar(value=True) for _ in range(4)
+        ]  # Track selected state (default selected)
         self.esc_calibration_entries: list[list[tk.Entry]] = []
         self.esc_power_sliders: list[tk.Scale] = []
         self.esc_power_value_labels: list[tk.Label] = []
-        
+
         # Initialize power slider throttling (only send latest value at timed intervals)
-        self.esc_power_pending: list[float | None] = [None] * 4  # Store pending power values
-        self.esc_power_send_scheduled: list[bool] = [False] * 4  # Track if send is already scheduled
+        self.esc_power_pending: list[float | None] = [
+            None
+        ] * 4  # Store pending power values
+        self.esc_power_send_scheduled: list[bool] = [
+            False
+        ] * 4  # Track if send is already scheduled
 
         # Create common settings section
         self._create_common_section(main_frame)
@@ -580,14 +638,16 @@ class ESCControlApp:
         # Frequency selection and Init button on same line
         settings_frame: tk.Frame = tk.Frame(master=common_frame)
         settings_frame.pack(fill=tk.X, pady=5)
-        
+
         # Frequency frame (left)
         freq_frame: tk.Frame = tk.Frame(master=settings_frame)
         freq_frame.pack(side=tk.LEFT, padx=5)
-        
-        freq_label: tk.Label = tk.Label(master=freq_frame, text="Frequency:", anchor="w")
+
+        freq_label: tk.Label = tk.Label(
+            master=freq_frame, text="Frequency:", anchor="w"
+        )
         freq_label.pack(side=tk.LEFT, padx=2)
-        
+
         self.frequency_combobox: ttk.Combobox = ttk.Combobox(
             master=freq_frame,
             values=self.FREQUENCY_OPTIONS,
@@ -600,7 +660,7 @@ class ESCControlApp:
         # Init and Deinit buttons frame (right)
         button_frame: tk.Frame = tk.Frame(master=settings_frame)
         button_frame.pack(side=tk.RIGHT, padx=5)
-        
+
         self.init_escs_button: tk.Button = tk.Button(
             master=button_frame,
             text="Init ESCs",
@@ -608,7 +668,7 @@ class ESCControlApp:
             width=12,
         )
         self.init_escs_button.pack(side=tk.LEFT, padx=2)
-        
+
         self.deinit_escs_button: tk.Button = tk.Button(
             master=button_frame,
             text="Deinit ESCs",
@@ -616,7 +676,7 @@ class ESCControlApp:
             width=12,
         )
         self.deinit_escs_button.pack(side=tk.LEFT, padx=2)
-        
+
         # Update button state based on serial connection
         self.update_esc_controls_state()
 
@@ -627,41 +687,50 @@ class ESCControlApp:
     def init_escs(self) -> None:
         """Send init commands for enabled ESCs that haven't been initialized yet."""
         command_delay = 0
-        
+
         for index in range(4):
             esc_id = index + 1
             # Skip deselected ESCs
             if not self.esc_selected[index].get():
                 print(f"ESC {esc_id} is not selected, skipping init")
                 continue
-            
+
             # Skip already initialized ESCs
             if self.esc_initialized[index]:
                 print(f"ESC {esc_id} is already initialized, skipping init")
                 continue
-            
+
             if self.esc_gpio_comboboxes[index] is None:
                 print(f"Error: ESC {esc_id} GPIO combobox is not initialized")
                 continue
-            
+
             # Get GPIO and direction
-            if self.esc_gpio_comboboxes[index] is None or self.esc_direction_comboboxes[index] is None:
+            if (
+                self.esc_gpio_comboboxes[index] is None
+                or self.esc_direction_comboboxes[index] is None
+            ):
                 print(f"Error: ESC {esc_id} comboboxes not initialized")
                 continue
-            
-            gpio_combobox: ttk.Combobox = cast(ttk.Combobox, self.esc_gpio_comboboxes[index])
-            direction_combobox: ttk.Combobox = cast(ttk.Combobox, self.esc_direction_comboboxes[index])
+
+            gpio_combobox: ttk.Combobox = cast(
+                ttk.Combobox, self.esc_gpio_comboboxes[index]
+            )
+            direction_combobox: ttk.Combobox = cast(
+                ttk.Combobox, self.esc_direction_comboboxes[index]
+            )
             gpio_str: str = gpio_combobox.get()
             direction_str: str = direction_combobox.get()
-            
+
             # Map GPIO to number (GPIO9 -> 9)
             gpio_num = int(gpio_str.replace("GPIO", ""))
-            
+
             # Map direction to number (Normal -> 0, Inverted -> 1)
             direction_num = 0 if direction_str == "Normal" else 1
-            
+
             # Get calibration values
-            if hasattr(self, 'esc_calibration_entries') and index < len(self.esc_calibration_entries):
+            if hasattr(self, "esc_calibration_entries") and index < len(
+                self.esc_calibration_entries
+            ):
                 calib_entries = self.esc_calibration_entries[index]
                 try:
                     calib_values = [int(entry.get()) for entry in calib_entries]
@@ -670,27 +739,38 @@ class ESCControlApp:
                     continue
             else:
                 calib_values = self.DEFAULT_ESC_CONFIG[index]["calibration"]
-            
+
             # Send init command: esc <id> init <gpio_num>
             init_command = f"esc {esc_id} init {gpio_num}"
-            self.parent.master.after(command_delay, lambda cmd=init_command, idx=index: self._send_init_command(cmd, idx))
+            self.parent.master.after(
+                command_delay,
+                lambda cmd=init_command, idx=index: self._send_init_command(cmd, idx),
+            )
             command_delay += 200
-            
+
             # Send direction command: esc <id> dir <direction_num>
             dir_command = f"esc {esc_id} dir {direction_num}"
-            self.parent.master.after(command_delay, lambda cmd=dir_command: self._send_command_to_serial(cmd))
+            self.parent.master.after(
+                command_delay, lambda cmd=dir_command: self._send_command_to_serial(cmd)
+            )
             command_delay += 200
-            
+
             # Send calibration command: esc [1-4] cali [bw_max] [bw_min] [idle] [fw_min] [fw_max]
             cali_command = f"esc {esc_id} cali {calib_values[0]} {calib_values[1]} {calib_values[2]} {calib_values[3]} {calib_values[4]}"
-            self.parent.master.after(command_delay, lambda cmd=cali_command: self._send_command_to_serial(cmd))
+            self.parent.master.after(
+                command_delay,
+                lambda cmd=cali_command: self._send_command_to_serial(cmd),
+            )
             command_delay += 200
-            
+
             # Send power test sequence: 0.00, -0.01, 0.00, 0.01, 0.00
             power_sequence = [0.00, -0.01, 0.00, 0.01, 0.00]
             for power_val in power_sequence:
                 pw_command = f"esc {esc_id} pw {power_val:.2f}"
-                self.parent.master.after(command_delay, lambda cmd=pw_command: self._send_command_to_serial(cmd))
+                self.parent.master.after(
+                    command_delay,
+                    lambda cmd=pw_command: self._send_command_to_serial(cmd),
+                )
                 command_delay += 750
 
     def _send_init_command(self, command: str, index: int) -> None:
@@ -707,21 +787,26 @@ class ESCControlApp:
     def deinit_escs(self) -> None:
         """Send deinit commands for enabled ESCs that have been initialized."""
         command_delay = 0
-        
+
         for index in range(4):
             esc_id = index + 1
             # Skip deselected ESCs
             if not self.esc_selected[index].get():
                 print(f"ESC {esc_id} is not selected, skipping deinit")
                 continue
-            
+
             # Skip ESCs that haven't been initialized
             if not self.esc_initialized[index]:
                 print(f"ESC {esc_id} is not initialized, skipping deinit")
                 continue
-            
+
             deinit_command = f"esc {esc_id} deinit"
-            self.parent.master.after(command_delay, lambda cmd=deinit_command, idx=index: self._send_deinit_command(cmd, idx))
+            self.parent.master.after(
+                command_delay,
+                lambda cmd=deinit_command, idx=index: self._send_deinit_command(
+                    cmd, idx
+                ),
+            )
             command_delay += 200
 
     def _send_deinit_command(self, command: str, index: int) -> None:
@@ -738,67 +823,85 @@ class ESCControlApp:
     def update_esc_config_state(self, index: int) -> None:
         """Update UI state for a specific ESC based on initialization status."""
         is_initialized = self.esc_initialized[index]
-        
+
         # Lock/unlock GPIO combobox
         if self.esc_gpio_comboboxes[index] is not None:
             gpio_box: ttk.Combobox = cast(ttk.Combobox, self.esc_gpio_comboboxes[index])
             gpio_box.config(state="disabled" if is_initialized else "readonly")
-        
+
         # Lock/unlock Direction combobox
         if self.esc_direction_comboboxes[index] is not None:
-            direction_box: ttk.Combobox = cast(ttk.Combobox, self.esc_direction_comboboxes[index])
+            direction_box: ttk.Combobox = cast(
+                ttk.Combobox, self.esc_direction_comboboxes[index]
+            )
             direction_box.config(state="disabled" if is_initialized else "readonly")
-        
+
         # Lock/unlock Calibration entries
-        if hasattr(self, 'esc_calibration_entries') and index < len(self.esc_calibration_entries):
+        if hasattr(self, "esc_calibration_entries") and index < len(
+            self.esc_calibration_entries
+        ):
             for entry in self.esc_calibration_entries[index]:
                 entry.config(state="disabled" if is_initialized else "normal")
-        
+
         # Enable/disable Power slider
-        if hasattr(self, 'esc_power_sliders') and index < len(self.esc_power_sliders):
-            self.esc_power_sliders[index].config(state="normal" if is_initialized else "disabled")
-        
+        if hasattr(self, "esc_power_sliders") and index < len(self.esc_power_sliders):
+            self.esc_power_sliders[index].config(
+                state="normal" if is_initialized else "disabled"
+            )
+
         # Lock frequency if any ESC is initialized
         any_initialized = any(self.esc_initialized)
-        self.frequency_combobox.config(state="disabled" if any_initialized else "readonly")
+        self.frequency_combobox.config(
+            state="disabled" if any_initialized else "readonly"
+        )
 
     def _reset_power_slider(self, index: int) -> None:
         """Reset power slider to zero on right-click."""
-        if hasattr(self, 'esc_power_sliders') and index < len(self.esc_power_sliders):
+        if hasattr(self, "esc_power_sliders") and index < len(self.esc_power_sliders):
             self.esc_power_sliders[index].set(0)
 
     def update_esc_controls_state(self) -> None:
         """Update ESC control button state based on serial connection and ESC states."""
         is_connected = self.parent.serial.is_connected()
-        
+
         # Determine which ESCs are selected
         selected_indices = [i for i in range(4) if self.esc_selected[i].get()]
-        
+
         if not is_connected:
             # Disable both buttons if not connected
             self.init_escs_button.config(state="disabled")
             self.deinit_escs_button.config(state="disabled")
         else:
             # Check if there are any selected ESCs that haven't been initialized
-            has_uninitialized_selected = any(not self.esc_initialized[i] for i in selected_indices)
+            has_uninitialized_selected = any(
+                not self.esc_initialized[i] for i in selected_indices
+            )
             # Check if there are any selected ESCs that have been initialized
-            has_initialized_selected = any(self.esc_initialized[i] for i in selected_indices)
-            
+            has_initialized_selected = any(
+                self.esc_initialized[i] for i in selected_indices
+            )
+
             # Enable Init button if there are selected ESCs that haven't been initialized
-            self.init_escs_button.config(state="normal" if has_uninitialized_selected else "disabled")
+            self.init_escs_button.config(
+                state="normal" if has_uninitialized_selected else "disabled"
+            )
             # Enable Deinit button if there are selected ESCs that have been initialized
-            self.deinit_escs_button.config(state="normal" if has_initialized_selected else "disabled")
+            self.deinit_escs_button.config(
+                state="normal" if has_initialized_selected else "disabled"
+            )
 
     def _on_power_slider_changed(self, index: int, slider_value: int) -> None:
         """Handle power slider change with throttling - only send newest value at timed intervals."""
         # Convert slider value (-100 to 100) to power value (-1.00 to 1.00)
         power: float = slider_value / 100.0
-        
+
         # Update the value display label immediately with color coding
-        if hasattr(self, 'esc_power_value_labels') and index < len(self.esc_power_value_labels):
+        if hasattr(self, "esc_power_value_labels") and index < len(
+            self.esc_power_value_labels
+        ):
             label: tk.Label = self.esc_power_value_labels[index]
             label.config(text=f"{power:.2f}")
-            
+
             # Update color based on power value
             if power == 0.0:
                 label.config(bg="#90EE90")  # Green for 0.00
@@ -806,14 +909,16 @@ class ESCControlApp:
                 label.config(bg="#FFFF00")  # Yellow for > 0.00
             else:  # power < 0.0
                 label.config(bg="#FFA500")  # Orange for < 0.00
-        
+
         # Store the pending power value (only latest value is kept)
         self.esc_power_pending[index] = power
-        
+
         # If no send is already scheduled, schedule one after 75ms
         if not self.esc_power_send_scheduled[index]:
             self.esc_power_send_scheduled[index] = True
-            self.parent.master.after(75, lambda idx=index: self._send_pending_power(idx))
+            self.parent.master.after(
+                75, lambda idx=index: self._send_pending_power(idx)
+            )
 
     def _send_pending_power(self, index: int) -> None:
         """Send the latest pending power value for an ESC."""
@@ -822,12 +927,10 @@ class ESCControlApp:
             esc_id = index + 1
             command = f"esc {esc_id} pw {power:.2f}"
             threading.Thread(
-                target=self._send_command_to_serial,
-                args=(command,),
-                daemon=True
+                target=self._send_command_to_serial, args=(command,), daemon=True
             ).start()
             self.esc_power_pending[index] = None
-        
+
         # Mark that send is no longer scheduled
         self.esc_power_send_scheduled[index] = False
 
@@ -836,14 +939,14 @@ class ESCControlApp:
         try:
             if not command.endswith("\n"):
                 command += "\n"
-            
+
             if self.parent.serial.is_connected():
                 self.parent.serial.send(command)
                 # Log the command
                 threading.Thread(
                     target=self.parent._async_log_and_display,
                     args=(command, True),
-                    daemon=True
+                    daemon=True,
                 ).start()
             else:
                 print("Serial port is not connected")
@@ -864,14 +967,14 @@ class ESCControlApp:
         # GPIO and Direction on same line with Enable toggle on right
         config_frame: tk.Frame = tk.Frame(master=section_frame)
         config_frame.pack(fill=tk.X, pady=5)
-        
+
         # GPIO frame (left)
         gpio_frame: tk.Frame = tk.Frame(master=config_frame)
         gpio_frame.pack(side=tk.LEFT, padx=5)
-        
+
         gpio_label: tk.Label = tk.Label(master=gpio_frame, text="GPIO:", anchor="w")
         gpio_label.pack(side=tk.LEFT, padx=2)
-        
+
         gpio_combobox: ttk.Combobox = ttk.Combobox(
             master=gpio_frame,
             values=self.GPIO_OPTIONS,
@@ -884,10 +987,12 @@ class ESCControlApp:
         # Direction frame (left-center)
         direction_frame: tk.Frame = tk.Frame(master=config_frame)
         direction_frame.pack(side=tk.LEFT, padx=5)
-        
-        direction_label: tk.Label = tk.Label(master=direction_frame, text="Direction:", anchor="w")
+
+        direction_label: tk.Label = tk.Label(
+            master=direction_frame, text="Direction:", anchor="w"
+        )
         direction_label.pack(side=tk.LEFT, padx=2)
-        
+
         direction_combobox: ttk.Combobox = ttk.Combobox(
             master=direction_frame,
             values=self.DIRECTION_OPTIONS,
@@ -914,7 +1019,9 @@ class ESCControlApp:
         calib_frame: tk.Frame = tk.Frame(master=section_frame)
         calib_frame.pack(fill=tk.X, pady=(10, 5))
 
-        calib_label: tk.Label = tk.Label(master=calib_frame, text="Calibrations:", anchor="w")
+        calib_label: tk.Label = tk.Label(
+            master=calib_frame, text="Calibrations:", anchor="w"
+        )
         calib_label.pack(side=tk.LEFT, padx=5)
 
         calib_values_frame: tk.Frame = tk.Frame(master=calib_frame)
@@ -925,9 +1032,14 @@ class ESCControlApp:
         default_calib: list[int] = self.DEFAULT_ESC_CONFIG[index]["calibration"]  # type: ignore
 
         for i, calib_label_text in enumerate(calib_labels):
-            label = tk.Label(master=calib_values_frame, text=f"{calib_label_text}:", width=8, anchor="e")
+            label = tk.Label(
+                master=calib_values_frame,
+                text=f"{calib_label_text}:",
+                width=8,
+                anchor="e",
+            )
             label.pack(side=tk.LEFT, padx=2)
-            
+
             entry = tk.Entry(master=calib_values_frame, width=6)
             entry.insert(0, str(default_calib[i]))
             entry.pack(side=tk.LEFT, padx=1)
@@ -940,7 +1052,9 @@ class ESCControlApp:
         power_frame: tk.Frame = tk.Frame(master=section_frame)
         power_frame.pack(fill=tk.X, pady=(10, 5))
 
-        power_label: tk.Label = tk.Label(master=power_frame, text="Motor Power:", anchor="w")
+        power_label: tk.Label = tk.Label(
+            master=power_frame, text="Motor Power:", anchor="w"
+        )
         power_label.pack(side=tk.LEFT, padx=5)
 
         # Create a frame for slider and value display
@@ -958,9 +1072,11 @@ class ESCControlApp:
         )
         power_slider.set(0)
         power_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
+
         # Bind right-click to reset slider to zero (bind to parent frame to work with disabled state)
-        slider_container.bind("<Button-3>", lambda event, idx=index: self._reset_power_slider(idx))
+        slider_container.bind(
+            "<Button-3>", lambda event, idx=index: self._reset_power_slider(idx)
+        )
 
         # Power value display label with color coding and click-to-reset
         power_value_label: tk.Label = tk.Label(
@@ -974,11 +1090,17 @@ class ESCControlApp:
             bd=2,
         )
         power_value_label.pack(side=tk.LEFT, padx=5)
-        
+
         # Bind all mouse clicks to reset slider to zero
-        power_value_label.bind("<Button-1>", lambda event, idx=index: self._reset_power_slider(idx))  # Left click
-        power_value_label.bind("<Button-2>", lambda event, idx=index: self._reset_power_slider(idx))  # Middle click
-        power_value_label.bind("<Button-3>", lambda event, idx=index: self._reset_power_slider(idx))  # Right click
+        power_value_label.bind(
+            "<Button-1>", lambda event, idx=index: self._reset_power_slider(idx)
+        )  # Left click
+        power_value_label.bind(
+            "<Button-2>", lambda event, idx=index: self._reset_power_slider(idx)
+        )  # Middle click
+        power_value_label.bind(
+            "<Button-3>", lambda event, idx=index: self._reset_power_slider(idx)
+        )  # Right click
 
         # Store power slider and value label for this ESC
         self.esc_power_sliders.append(power_slider)

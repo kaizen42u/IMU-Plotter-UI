@@ -7,14 +7,14 @@ class tkAutocompleteCombobox(ttk.Combobox):
     def __init__(self, *args, sort_key=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._sort_key = sort_key
-    
+
     def update_completion_list(self, completion_list: list[str]) -> None:
         # Remove duplicates and sort the list
         if self._sort_key:
             self._completion_list = sorted(set(completion_list), key=self._sort_key)
         else:
             self._completion_list = sorted(set(completion_list))
-        
+
         self._hits = []
         self._hit_index = 0
         self.position = 0
@@ -28,7 +28,7 @@ class tkAutocompleteCombobox(ttk.Combobox):
         if old_selection in self._completion_list:
             self.select_item(old_selection)
             return
-        
+
         # Automatically select the first item in the list
         if self._completion_list:
             self.select_item(self._completion_list[0])

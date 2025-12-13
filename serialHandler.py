@@ -18,9 +18,11 @@ class serialHandler:
         # Initialize thread-safe locks first
         self._lock = threading.RLock()
         self._killed_event = threading.Event()
-        
+
         self.serial_port: Optional[serial.Serial] = None
-        self.connected_port: Optional[str] = None  # Track the connected port for disconnect callback
+        self.connected_port: Optional[str] = (
+            None  # Track the connected port for disconnect callback
+        )
         self.killed: bool = False
         self.line_received_callback: Optional[Callable[[str], None]] = (
             line_received_callback
@@ -34,9 +36,11 @@ class serialHandler:
         self.read_serial_thread: Optional[threading.Thread] = None
         self.interval = interval
         self.baudrate: int = baudrate
-        
+
         # Start threads after all attributes are initialized
-        self.port_monitor_thread = threading.Thread(target=self.monitor_ports, daemon=True)
+        self.port_monitor_thread = threading.Thread(
+            target=self.monitor_ports, daemon=True
+        )
         self.port_monitor_thread.start()
 
     def log(self, message: str) -> None:
@@ -59,7 +63,9 @@ class serialHandler:
                 self.connected_port = port
                 self._killed_event.clear()
                 self.log(f"Port [{self.serial_port.name}] Connected")
-                self.read_serial_thread = threading.Thread(target=self.read_from_port, daemon=True)
+                self.read_serial_thread = threading.Thread(
+                    target=self.read_from_port, daemon=True
+                )
                 self.read_serial_thread.start()
                 return True
             except serial.SerialException as err:
@@ -117,7 +123,7 @@ class serialHandler:
                     except Exception as err:
                         self.log(f"Unexpected error reading from port: {err}")
                         break
-                
+
                 if line:
                     try:
                         reading = line.decode("utf-8").rstrip("\n")
@@ -127,7 +133,7 @@ class serialHandler:
                         self.log(f"Bad serial data: {err}")
                 else:
                     sleep(self.interval)
-            
+
             print("Serial port read thread exiting")
         except Exception as err:
             self.log(f"Fatal error in read thread: {err}")
@@ -135,12 +141,12 @@ class serialHandler:
     def close(self) -> None:
         self._killed_event.set()
         self.disconnect()
-        
+
         if self.read_serial_thread and self.read_serial_thread.is_alive():
             self.read_serial_thread.join(timeout=2)
             if self.read_serial_thread.is_alive():
                 self.log("Warning: read_serial_thread did not exit in time")
-        
+
         if self.port_monitor_thread.is_alive():
             self.port_monitor_thread.join(timeout=2)
             if self.port_monitor_thread.is_alive():
@@ -155,7 +161,9 @@ class serialHandler:
     def set_ports_changed_callback(self, callback: Callable[[List[str]], None]) -> None:
         self.ports_changed_callback = callback
 
-    def set_disconnect_callback(self, callback: Optional[Callable[[str], None]]) -> None:
+    def set_disconnect_callback(
+        self, callback: Optional[Callable[[str], None]]
+    ) -> None:
         self.disconnect_callback = callback
 
     def monitor_ports(self) -> None:
@@ -165,25 +173,27 @@ class serialHandler:
             callback = None
             port_disconnected = False
             disconnected_port: Optional[str] = None
-            
+
             with self._lock:
                 if new_ports != self.current_ports:
                     self.current_ports = new_ports
                     callback = self.ports_changed_callback
-                
+
                 # Check if the connected port is no longer available
                 if self.connected_port and self.connected_port not in new_ports:
                     port_disconnected = True
                     disconnected_port = self.connected_port
-            
+
             # Disconnect if port became unavailable
             if port_disconnected and disconnected_port:
                 self.disconnect()
 
-                print(f"Auto-disconnected from port [{disconnected_port}] (no longer available)")
+                print(
+                    f"Auto-disconnected from port [{disconnected_port}] (no longer available)"
+                )
                 if self.disconnect_callback:
                     self.disconnect_callback(disconnected_port)
-            
+
             if callback:
                 callback(new_ports)
 

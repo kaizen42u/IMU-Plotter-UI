@@ -13,26 +13,26 @@ ansi_color_bg = {49: "background default"}
 # Hardcoded color palettes for dark mode terminal
 # Standard colors (30-37, 40-47)
 DEFAULT_COLORS_DARK = [
-    "#1E1E1E",        # 30: Black
-    "#CD3131",        # 31: Red
-    "#0DBC79",        # 32: Green
-    "#E5E510",        # 33: Yellow
-    "#2472C8",        # 34: Blue
-    "#BC3FBC",        # 35: Magenta
-    "#11A8CD",        # 36: Cyan
-    "#E5E5E5",        # 37: Gray
+    "#1E1E1E",  # 30: Black
+    "#CD3131",  # 31: Red
+    "#0DBC79",  # 32: Green
+    "#E5E510",  # 33: Yellow
+    "#2472C8",  # 34: Blue
+    "#BC3FBC",  # 35: Magenta
+    "#11A8CD",  # 36: Cyan
+    "#E5E5E5",  # 37: Gray
 ]
 
 # Bright colors (90-97, 100-107)
 DEFAULT_COLORS_LIGHT = [
-    "#E5E5E5",        # 90: Bright Gray
-    "#F14C4C",        # 91: Bright Red
-    "#23D18B",        # 92: Bright Green
-    "#F5F543",        # 93: Bright Yellow
-    "#3B8EEA",        # 94: Bright Blue
-    "#D670D6",        # 95: Bright Magenta
-    "#29B8DB",        # 96: Bright Cyan
-    "#666666",        # 97: Bright White
+    "#E5E5E5",  # 90: Bright Gray
+    "#F14C4C",  # 91: Bright Red
+    "#23D18B",  # 92: Bright Green
+    "#F5F543",  # 93: Bright Yellow
+    "#3B8EEA",  # 94: Bright Blue
+    "#D670D6",  # 95: Bright Magenta
+    "#29B8DB",  # 96: Bright Cyan
+    "#666666",  # 97: Bright White
 ]
 
 # regular expression to find ansi codes in string
@@ -52,8 +52,12 @@ class tkAnsiFormatter:
         self.text = text
         self.font = font
         self.size = size
-        self.colors_dark = colors_dark if colors_dark is not None else DEFAULT_COLORS_DARK
-        self.colors_light = colors_light if colors_light is not None else DEFAULT_COLORS_LIGHT
+        self.colors_dark = (
+            colors_dark if colors_dark is not None else DEFAULT_COLORS_DARK
+        )
+        self.colors_light = (
+            colors_light if colors_light is not None else DEFAULT_COLORS_LIGHT
+        )
         self.configure_style()
 
     @staticmethod
@@ -64,7 +68,7 @@ class tkAnsiFormatter:
     def get_brightness(hex_color: str) -> float:
         """Calculate brightness of a color (0-1, where 1 is brightest)."""
         hex_color = hex_color.lstrip("#")
-        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        r, g, b = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
         # Standard luminance formula
         return (0.299 * r + 0.587 * g + 0.114 * b) / 255
 
@@ -103,8 +107,12 @@ class tkAnsiFormatter:
             contrast_text_dark = self.get_contrasting_text_color(col_dark)
             contrast_text_light = self.get_contrasting_text_color(col_light)
 
-            self.text.tag_configure(bg_tag_dark, background=col_dark, foreground=contrast_text_dark)
-            self.text.tag_configure(bg_tag_light, background=col_light, foreground=contrast_text_light)
+            self.text.tag_configure(
+                bg_tag_dark, background=col_dark, foreground=contrast_text_dark
+            )
+            self.text.tag_configure(
+                bg_tag_light, background=col_light, foreground=contrast_text_light
+            )
 
         # Configure a high-priority selection tag that overlays ANSI colors
         self.text.tag_configure(
@@ -115,7 +123,7 @@ class tkAnsiFormatter:
         )
         # Make select_overlay have highest priority
         self.text.tag_raise("select_overlay")
-        
+
         # Bind mouse events to handle selection with overlay
         self.text.bind("<Button-1>", self._on_select_start)
         self.text.bind("<B1-Motion>", self._on_select_motion)
