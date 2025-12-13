@@ -12,7 +12,12 @@ class serialHandler:
         log_callback: Optional[Callable[[str], None]] = None,
         ports_changed_callback: Optional[Callable[[List[str]], None]] = None,
         interval: float = 0.05,
+        baudrate: int = 115200,
     ):
+        # Initialize thread-safe locks first
+        self._lock = threading.RLock()  # Reentrant lock for nested calls
+        self._killed_event = threading.Event()  # Better than polling a bool
+        
         self.serial_port: Optional[serial.Serial] = None
         self.killed: bool = False
         self.line_received_callback: Optional[Callable[[str], None]] = (
@@ -23,10 +28,13 @@ class serialHandler:
             ports_changed_callback
         )
         self.current_ports: List[str] = self.get_ports()
-        self.port_monitor_thread = threading.Thread(target=self.monitor_ports)
-        self.port_monitor_thread.start()
         self.read_serial_thread: Optional[threading.Thread] = None
         self.interval = interval
+        self.baudrate: int = baudrate
+        
+        # Start threads after all attributes are initialized
+        self.port_monitor_thread = threading.Thread(target=self.monitor_ports, daemon=True)
+        self.port_monitor_thread.start()
 
     def log(self, message: str) -> None:
         if self.log_callback:
@@ -36,70 +44,104 @@ class serialHandler:
         ports = serial.tools.list_ports.comports()
         return [port.device for port in ports]
 
-    def connect(self, port: str, baudrate: int = 115200) -> None:
-        self.serial_port = serial.Serial(port)
-        self.serial_port.close()
-        self.serial_port = serial.Serial(port, baudrate=baudrate, timeout=1.0)
-        if self.log:
-            self.log(f"Port [{self.serial_port.name}] Connected")
-
-        self.read_thread = threading.Thread(target=self.read_from_port)
-        self.read_thread.start()
+    def connect(self, port: str, baudrate: Optional[int] = None) -> bool:
+        with self._lock:
+            if self.is_connected():
+                self.log("Already connected. Disconnect first.")
+                return False
+            if baudrate is None:
+                baudrate = self.baudrate
+            try:
+                # Use a lower timeout (0.1s) to make reads more responsive
+                self.serial_port = serial.Serial(port, baudrate=baudrate, timeout=0.1)
+                self._killed_event.clear()  # Reset killed event on connect
+                self.log(f"Port [{self.serial_port.name}] Connected")
+                self.read_serial_thread = threading.Thread(target=self.read_from_port, daemon=True)
+                self.read_serial_thread.start()
+                return True
+            except serial.SerialException as err:
+                self.log(f"Failed to connect to port [{port}]: {err}")
+                return False
 
     def disconnect(self) -> None:
-        if self.serial_port and self.serial_port.is_open:
-            self.serial_port.close()
-            if not self.serial_port.is_open:
-                self.log(f"Port [{self.serial_port.name}] Disconnected")
-                # self.read_thread.join()
-            else:
-                self.log(f"Failed to close port [{self.serial_port.name}]")
+        with self._lock:
+            if self.serial_port and self.serial_port.is_open:
+                try:
+                    port_name = self.serial_port.name
+                    self.serial_port.close()
+                    if not self.serial_port.is_open:
+                        self.log(f"Port [{port_name}] Disconnected")
+                    else:
+                        self.log(f"Failed to close port [{port_name}]")
+                except Exception as err:
+                    self.log(f"Error closing port: {err}")
+                finally:
+                    self.serial_port = None
 
     def is_connected(self) -> bool:
         return self.serial_port is not None and self.serial_port.is_open
 
+    def send(self, data: str) -> bool:
+        """Send data to the serial port. Returns True if successful, False otherwise."""
+        with self._lock:
+            if not self.is_connected() or self.serial_port is None:
+                self.log("Cannot send data: port is not connected")
+                return False
+            try:
+                self.serial_port.write(data.encode("utf-8"))
+                self.serial_port.flush()  # Flush immediately to avoid buffering delays
+                return True
+            except serial.SerialException as err:
+                self.log(f"Failed to send data: {err}")
+                self.disconnect()
+                return False
+            except Exception as err:
+                self.log(f"Error sending data: {err}")
+                return False
+
     def read_from_port(self) -> None:
         try:
-            while not self.killed and self.is_connected():
-                sleep(self.interval)
-                line: bytes | None = b"empty"
-                while self.is_connected() and line:
+            while not self._killed_event.is_set():
+                with self._lock:
+                    if not self.is_connected() or self.serial_port is None:
+                        break
                     try:
-                        if self.serial_port is not None:
-                            line = self.serial_port.readline()
-                            if not line:
-                                break
-                            reading = line.decode("utf-8").rstrip("\n")
-                            if self.line_received_callback:
-                                self.line_received_callback(reading)
-                    except serial.SerialException as serr:
-                        self.disconnect()
-                        self.log(
-                            f"Could not read port [{self.serial_port.name if self.serial_port else None}]: {serr}"
-                        )
-                    except TypeError as terr:
-                        self.log(
-                            f"Bad serial data for port [{self.serial_port.name if self.serial_port else None}]: {terr}"
-                        )
+                        line = self.serial_port.readline()
+                    except serial.SerialException as err:
+                        self.log(f"Serial port error: {err}")
+                        break
                     except Exception as err:
-                        self.log(f"Serial Exception: {err}")
-            print("Serial Port thread exiting")
+                        self.log(f"Unexpected error reading from port: {err}")
+                        break
+                
+                # Process data outside the lock to avoid blocking other operations
+                if line:
+                    try:
+                        reading = line.decode("utf-8").rstrip("\n")
+                        if self.line_received_callback:
+                            self.line_received_callback(reading)
+                    except UnicodeDecodeError as err:
+                        self.log(f"Bad serial data: {err}")
+                else:
+                    sleep(self.interval)
+            
+            self.log("Serial port read thread exiting")
         except Exception as err:
-            self.log(f"### Serial Port thread killed, trying to restart: {err} ###")
-            self.read_serial_thread = threading.Thread(target=self.read_from_port)
-            self.read_serial_thread.start()
+            self.log(f"Fatal error in read thread: {err}")
 
     def close(self) -> None:
-        self.killed = True
+        self._killed_event.set()
         self.disconnect()
-        if self.read_serial_thread:
+        
+        if self.read_serial_thread and self.read_serial_thread.is_alive():
+            self.read_serial_thread.join(timeout=2)
             if self.read_serial_thread.is_alive():
-                self.read_serial_thread.join(timeout=1)
-            if self.read_serial_thread.is_alive():
-                print("read_serial_thread did not exit in time")
-        self.port_monitor_thread.join(timeout=1)
+                self.log("Warning: read_serial_thread did not exit in time")
+        
         if self.port_monitor_thread.is_alive():
-            print("port_monitor_thread did not exit in time")
+            self.port_monitor_thread.join(timeout=2)
+            if self.port_monitor_thread.is_alive():
+                self.log("Warning: port_monitor_thread did not exit in time")
 
     def set_line_received_callback(self, callback: Callable[[str], None]) -> None:
         self.line_received_callback = callback
@@ -111,13 +153,19 @@ class serialHandler:
         self.ports_changed_callback = callback
 
     def monitor_ports(self) -> None:
-        while not self.killed:
+        while not self._killed_event.is_set():
             sleep(1)
             new_ports = self.get_ports()
-            if new_ports != self.current_ports:
-                self.current_ports = new_ports
-                if self.ports_changed_callback:
-                    self.ports_changed_callback(new_ports)
+            callback = None
+            
+            with self._lock:
+                if new_ports != self.current_ports:
+                    self.current_ports = new_ports
+                    callback = self.ports_changed_callback
+            
+            # Call callback outside the lock
+            if callback:
+                callback(new_ports)
 
 
 # Test code
@@ -144,6 +192,7 @@ if __name__ == "__main__":
         serial_handler.connect(ports[0])
         try:
             while True:
+                serial_handler.send("Hello World!\n")
                 sleep(1)
         except KeyboardInterrupt:
             print("Exiting...")
