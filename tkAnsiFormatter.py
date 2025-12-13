@@ -35,45 +35,6 @@ DEFAULT_COLORS_LIGHT = [
     "#666666",        # 97: Bright White
 ]
 
-# ANSI 8-color standard codes
-ANSI_COLOR_CODES = {
-    30: "Black",
-    31: "Red",
-    32: "Green",
-    33: "Yellow",
-    34: "Blue",
-    35: "Magenta",
-    36: "Cyan",
-    37: "Gray",
-    
-    40: "Background Black",
-    41: "Background Red",
-    42: "Background Green",
-    43: "Background Yellow",
-    44: "Background Blue",
-    45: "Background Magenta",
-    46: "Background Cyan",
-    47: "Background Gray",
-    
-    90: "Bright Gray",
-    91: "Bright Red",
-    92: "Bright Green",
-    93: "Bright Yellow",
-    94: "Bright Blue",
-    95: "Bright Magenta",
-    96: "Bright Cyan",
-    97: "Bright White",
-
-    100: "Background Bright Gray",
-    101: "Background Bright Red",
-    102: "Background Bright Green",
-    103: "Background Bright Yellow",
-    104: "Background Bright Blue",
-    105: "Background Bright Magenta",
-    106: "Background Bright Cyan",
-    107: "Background Bright White",
-}
-
 # regular expression to find ansi codes in string
 ansi_regexp = re.compile(r"\x1b\[((\d+;)*\d+)m")
 ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
