@@ -1,9 +1,9 @@
 import re
-import sys
 import threading
 import tkinter as tk
 from datetime import datetime
 from typing import List
+from pathlib import Path
 
 import matplotlib
 import serial
@@ -36,10 +36,19 @@ class SerialPlotterApp:
         
         self._reconnect_enabled: bool = False  # Only enabled after manual connect, disabled on manual disconnect
         self._reconnect_attempts: int = 0
+        
+        # Logging variables
+        self.logging_enabled: bool = False
+        self.log_file_path: Path | None = None
+        self.log_file_handle = None
 
         self.serial: serialHandler = serialHandler()
 
         self.setup_ui()
+        
+        # Enable logging by default
+        self.logging_var.set(True)
+        self.start_logging()
 
         # Get a list of all available serial ports
         ports = self.serial.get_ports()
@@ -103,6 +112,17 @@ class SerialPlotterApp:
         )
         self.terminal_auto_scroll_checkbox.config(width=20)
         self.terminal_auto_scroll_checkbox.grid(row=0, column=5, padx=5)
+
+        # Create logging checkbox
+        self.logging_var = tk.BooleanVar(master=self.master, value=True)
+        self.logging_checkbox = tk.Checkbutton(
+            master=self.control_frame,
+            text="Logging",
+            variable=self.logging_var,
+            command=self.toggle_logging,
+        )
+        self.logging_checkbox.config(width=20)
+        self.logging_checkbox.grid(row=0, column=6, padx=5)
 
         # Create the serial terminal
         self.terminal = tkTerminal(master=self.master, width=TERMINAL_MAX_WIDTH)
@@ -178,13 +198,73 @@ class SerialPlotterApp:
         self.master.grid_rowconfigure(1, weight=1)
         self.master.grid_columnconfigure(0, weight=1)
 
+    def toggle_logging(self) -> None:
+        if self.logging_var.get():
+            self.start_logging()
+        else:
+            self.stop_logging()
+
+    def start_logging(self) -> None:
+        try:
+            session_logs_dir = Path("./session_logs")
+            session_logs_dir.mkdir(exist_ok=True)
+
+            # Create log filename with current timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.log_file_path = session_logs_dir / f"{timestamp}.log"
+
+            # Open log file for writing
+            self.log_file_handle = open(self.log_file_path, "w")
+            self.logging_enabled = True
+            self.terminal_show_message(f"{ANSI.bGreen}Logging started: {self.log_file_path}{ANSI.default}")
+        except Exception as e:
+            self.terminal_show_message(f"{ANSI.bRed}Failed to start logging: {e}{ANSI.default}")
+            self.logging_var.set(False)
+
+    def stop_logging(self) -> None:
+        """Stop logging and close log file."""
+        try:
+            if self.log_file_handle:
+                self.log_file_handle.close()
+            self.logging_enabled = False
+            self.log_file_handle = None
+            self.terminal_show_message(f"{ANSI.bGreen}Logging stopped{ANSI.default}")
+        except Exception as e:
+            self.terminal_show_message(f"{ANSI.bRed}Failed to stop logging: {e}{ANSI.default}")
+
+    def write_log(self, data: str, direction: str) -> None:
+        """Write data to session log. direction should be 'tx' or 'rx'."""
+        if not self.logging_enabled or not self.log_file_handle:
+            return
+
+        try:
+            # Get current time with milliseconds
+            now = datetime.now()
+            timestamp = now.strftime("%y%m%d-%H%M%S")
+            ms = now.microsecond // 1000
+
+            # Remove newlines for cleaner log format
+            clean_data = data.rstrip("\n\r")
+
+            # Write to log file
+            log_line = f"({timestamp}:{ms:03d})({direction}) | {clean_data}\n"
+            self.log_file_handle.write(log_line)
+            self.log_file_handle.flush()
+        except Exception as e:
+            print(f"[W] Error writing to log: {e}")
+
     def close(self) -> None:
+        # Stop logging if active
+        if self.logging_enabled:
+            self.stop_logging()
+        
         # Flag the process as dead and close serial port
         self.killed = True
         self.stop_event.set()
         self.serial.close()
 
     def serial_line_received(self, line: str) -> None:
+        self.write_log(line, " R")
         self.update_graphs(line)
         self.update_terminal(line)
 
@@ -356,6 +436,7 @@ class SerialPlotterApp:
         
         success = self.serial.send(command)
         if success:
+            self.write_log(command, "T ")
             self.terminal_show_message(f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}")
         else:
             self.terminal_show_message(f"{ANSI.bRed}Error: Failed to send command{ANSI.default}")
