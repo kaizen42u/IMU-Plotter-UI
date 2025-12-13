@@ -9,26 +9,70 @@ ansi_font_reset = {21: "bold", 23: "italic", 24: "underline", 29: "overstrike"}
 # dictionaries to replace color code with tags
 ansi_color_fg = {39: "foreground default"}
 ansi_color_bg = {49: "background default"}
-ansi_colors_dark = [
-    "black",
-    "red",
-    "green",
-    "yellow",
-    "royal blue",
-    "magenta",
-    "cyan",
-    "light gray",
+
+# Hardcoded color palettes for dark mode terminal
+# Standard colors (30-37, 40-47)
+DEFAULT_COLORS_DARK = [
+    "#1E1E1E",        # 30: Black
+    "#CD3131",        # 31: Red
+    "#0DBC79",        # 32: Green
+    "#E5E510",        # 33: Yellow
+    "#2472C8",        # 34: Blue
+    "#BC3FBC",        # 35: Magenta
+    "#11A8CD",        # 36: Cyan
+    "#E5E5E5",        # 37: Gray
 ]
-ansi_colors_light = [
-    "dark gray",
-    "tomato",
-    "light green",
-    "light goldenrod",
-    "light blue",
-    "pink",
-    "light cyan",
-    "white",
+
+# Bright colors (90-97, 100-107)
+DEFAULT_COLORS_LIGHT = [
+    "#E5E5E5",        # 90: Bright Gray
+    "#F14C4C",        # 91: Bright Red
+    "#23D18B",        # 92: Bright Green
+    "#F5F543",        # 93: Bright Yellow
+    "#3B8EEA",        # 94: Bright Blue
+    "#D670D6",        # 95: Bright Magenta
+    "#29B8DB",        # 96: Bright Cyan
+    "#666666",        # 97: Bright White
 ]
+
+# ANSI 8-color standard codes
+ANSI_COLOR_CODES = {
+    30: "Black",
+    31: "Red",
+    32: "Green",
+    33: "Yellow",
+    34: "Blue",
+    35: "Magenta",
+    36: "Cyan",
+    37: "Gray",
+    
+    40: "Background Black",
+    41: "Background Red",
+    42: "Background Green",
+    43: "Background Yellow",
+    44: "Background Blue",
+    45: "Background Magenta",
+    46: "Background Cyan",
+    47: "Background Gray",
+    
+    90: "Bright Gray",
+    91: "Bright Red",
+    92: "Bright Green",
+    93: "Bright Yellow",
+    94: "Bright Blue",
+    95: "Bright Magenta",
+    96: "Bright Cyan",
+    97: "Bright White",
+
+    100: "Background Bright Gray",
+    101: "Background Bright Red",
+    102: "Background Bright Green",
+    103: "Background Bright Yellow",
+    104: "Background Bright Blue",
+    105: "Background Bright Magenta",
+    106: "Background Bright Cyan",
+    107: "Background Bright White",
+}
 
 # regular expression to find ansi codes in string
 ansi_regexp = re.compile(r"\x1b\[((\d+;)*\d+)m")
@@ -36,15 +80,39 @@ ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 class tkAnsiFormatter:
-    def __init__(self, text: tk.Text, font: str = "Consolas", size: int = 9) -> None:
+    def __init__(
+        self,
+        text: tk.Text,
+        font: str = "Consolas",
+        size: int = 9,
+        colors_dark: list | None = None,
+        colors_light: list | None = None,
+    ) -> None:
         self.text = text
         self.font = font
         self.size = size
+        self.colors_dark = colors_dark if colors_dark is not None else DEFAULT_COLORS_DARK
+        self.colors_light = colors_light if colors_light is not None else DEFAULT_COLORS_LIGHT
         self.configure_style()
 
     @staticmethod
     def escaped(str: str) -> str:
         return ansi_escape.sub("", str)
+
+    @staticmethod
+    def get_brightness(hex_color: str) -> float:
+        """Calculate brightness of a color (0-1, where 1 is brightest)."""
+        hex_color = hex_color.lstrip("#")
+        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        # Standard luminance formula
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+
+    @staticmethod
+    def get_contrasting_text_color(bg_hex: str) -> str:
+        """Return dark or white text color based on background brightness."""
+        brightness = tkAnsiFormatter.get_brightness(bg_hex)
+        # If background is bright, use dark text; otherwise use white text
+        return "#000000" if brightness > 0.5 else "#FFFFFF"
 
     def configure_style(self) -> None:
         self.text.configure(font=(self.font, self.size))
@@ -56,16 +124,26 @@ class tkAnsiFormatter:
         self.text.tag_configure("background default", background=self.text["bg"])
 
         for i, (col_dark, col_light) in enumerate(
-            zip(ansi_colors_dark, ansi_colors_light)
+            zip(self.colors_dark, self.colors_light)
         ):
+            # Foreground colors
             ansi_color_fg[30 + i] = "foreground " + col_dark
             ansi_color_fg[90 + i] = "foreground " + col_light
-            ansi_color_bg[40 + i] = "background " + col_dark
-            ansi_color_bg[100 + i] = "background " + col_light
             self.text.tag_configure("foreground " + col_dark, foreground=col_dark)
-            self.text.tag_configure("background " + col_dark, background=col_dark)
             self.text.tag_configure("foreground " + col_light, foreground=col_light)
-            self.text.tag_configure("background " + col_light, background=col_light)
+
+            # Background colors with contrasting text color for default foreground
+            bg_tag_dark = "background " + col_dark
+            bg_tag_light = "background " + col_light
+            ansi_color_bg[40 + i] = bg_tag_dark
+            ansi_color_bg[100 + i] = bg_tag_light
+
+            # Use contrasting text color when background is applied with default foreground
+            contrast_text_dark = self.get_contrasting_text_color(col_dark)
+            contrast_text_light = self.get_contrasting_text_color(col_light)
+
+            self.text.tag_configure(bg_tag_dark, background=col_dark, foreground=contrast_text_dark)
+            self.text.tag_configure(bg_tag_light, background=col_light, foreground=contrast_text_light)
 
     def insert_ansi(self, txt: str, index: str = "insert") -> None:
         first_line, first_char = map(int, str(self.text.index(index)).split("."))

@@ -20,7 +20,9 @@ class tkTerminal:
             self.frame,
             width=width,
             yscrollcommand=self.scrollbar.set,
-            background="#E7FCF6",
+            background="#1E1E1E",
+            foreground="#CCCCCC",
+            insertbackground="#CCCCCC",
         )
 
         # Place the tk.Text widget and tk.Scrollbar in the tk.Frame
@@ -55,3 +57,35 @@ class tkTerminal:
 
     def set_autoscroll(self, autoscroll: bool) -> None:
         self.autoscroll = autoscroll
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.title("Terminal Test")
+    root.geometry("900x500")
+
+    terminal = tkTerminal(master=root, width=100)
+    terminal.grid(row=0, column=0, sticky="nsew")
+    root.grid_rowconfigure(0, weight=1)
+    root.grid_columnconfigure(0, weight=1)
+
+    # Test text with ANSI colors
+    terminal.write("Testing Terminal Output\n")
+    terminal.write("\x1b[31mRed Text\x1b[39m\n")
+    terminal.write("\x1b[32mGreen Text\x1b[39m\n")
+    terminal.write("\x1b[33mYellow Text\x1b[39m\n")
+    terminal.write("\x1b[34mBlue Text\x1b[39m\n")
+    terminal.write("\x1b[35mMagenta Text\x1b[39m\n")
+    terminal.write("\x1b[36mCyan Text\x1b[39m\n")
+    terminal.write("\x1b[90mBright Black Text\x1b[39m\n")
+    terminal.write("\x1b[91mBright Red Text\x1b[39m\n")
+    terminal.write("\x1b[92mBright Green Text\x1b[39m\n")
+    terminal.write("\x1b[93mBright Yellow Text\x1b[39m\n")
+    terminal.write("\x1b[94mBright Blue Text\x1b[39m\n")
+    terminal.write("\x1b[95mBright Magenta Text\x1b[39m\n")
+    terminal.write("\x1b[96mBright Cyan Text\x1b[39m\n")
+    terminal.write("\x1b[97mBright White Text\x1b[39m\n")
+    terminal.write("\x1b[1m\x1b[32mBold Green Text\x1b[39m\x1b[21m\n")
+    terminal.write("Normal text after formatting reset\n")
+
+    root.mainloop()
