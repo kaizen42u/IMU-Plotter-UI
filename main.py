@@ -247,7 +247,7 @@ class SerialPlotterApp:
             clean_data = data.rstrip("\n\r")
 
             # Write to log file
-            log_line = f"({timestamp}:{ms:03d})({direction}) | {clean_data}\n"
+            log_line = f"({timestamp}.{ms:03d})({direction}) | {clean_data}\n"
             self.log_file_handle.write(log_line)
             self.log_file_handle.flush()
         except Exception as e:
@@ -264,9 +264,16 @@ class SerialPlotterApp:
         self.serial.close()
 
     def serial_line_received(self, line: str) -> None:
-        self.write_log(line, " R")
         self.update_graphs(line)
         self.update_terminal(line)
+        
+        # Log asynchronously to not block graph/terminal updates
+        if self.logging_enabled:
+            threading.Thread(
+                target=self.write_log,
+                args=(line, " R"),
+                daemon=True
+            ).start()
 
     def serial_log(self, message: str) -> None:
         self.terminal_show_message(message)
@@ -435,15 +442,30 @@ class SerialPlotterApp:
             command += "\n"
         
         success = self.serial.send(command)
+        
         if success:
-            self.write_log(command, "T ")
-            self.terminal_show_message(f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}")
+            threading.Thread(
+                target=self._async_log_and_display,
+                args=(command, True),
+                daemon=True
+            ).start()
         else:
             self.terminal_show_message(f"{ANSI.bRed}Error: Failed to send command{ANSI.default}")
         
         # Keep textfield populated but select all text for quick resend
         self.send_command_entry.select_range(0, tk.END)
         self.send_command_entry.focus()
+
+    def _async_log_and_display(self, command: str, is_tx: bool) -> None:
+        try:
+            if is_tx:
+                self.write_log(command, "T ")
+            
+            self.master.after(0, lambda: self.terminal_show_message(
+                f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}"
+            ))
+        except Exception as e:
+            print(f"[W] Error in async_log_and_display: {e}")
 
     def draw_graphs(self) -> None:
         while not self.stop_event.is_set():
