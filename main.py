@@ -221,6 +221,15 @@ class SerialPlotterApp:
         self.escs_button.config(width=20)
         self.escs_button.grid(row=1, column=0, padx=2, pady=2)
 
+        # Create Lights button
+        self.lights_button = tk.Button(
+            master=self.buttons_frame,
+            text="Lights",
+            command=self.open_light_control,
+        )
+        self.lights_button.config(width=20)
+        self.lights_button.grid(row=2, column=0, padx=2, pady=2)
+
         # Configure the grid to expand
         self.master.grid_rowconfigure(1, weight=1)
         self.master.grid_columnconfigure(0, weight=1)
@@ -377,6 +386,10 @@ class SerialPlotterApp:
         if hasattr(self, "esc_control_app") and self.esc_control_app is not None:
             self.esc_control_app.update_esc_controls_state()
 
+        # Update Light control button state
+        if hasattr(self, "light_control_app") and self.light_control_app is not None:
+            self.light_control_app.update_light_controls_state()
+
     def serial_connect_toggle(self) -> None:
         # If already connected, disconnect
         if self.serial.is_connected():
@@ -427,6 +440,17 @@ class SerialPlotterApp:
                 self.esc_control_app.window.withdraw()
             else:
                 self.esc_control_app.window.deiconify()
+
+    def open_light_control(self) -> None:
+        """Toggle Light control window visibility."""
+        if not hasattr(self, "light_control_app") or self.light_control_app is None:
+            self.light_control_app = LightControlApp(parent=self)
+        else:
+            # Toggle visibility
+            if self.light_control_app.window.winfo_viewable():
+                self.light_control_app.window.withdraw()
+            else:
+                self.light_control_app.window.deiconify()
 
     def update_terminal(self, reading: str) -> None:
         is_imu_data: bool = bool(re.search(SERIAL_IMU_BNO085_DATA_REGEX, reading))
@@ -1105,6 +1129,288 @@ class ESCControlApp:
         # Store power slider and value label for this ESC
         self.esc_power_sliders.append(power_slider)
         self.esc_power_value_labels.append(power_value_label)
+
+
+class LightControlApp:
+    """Light control window for managing a single LED light."""
+
+    # GPIO options from GPIO0-GPIO21 and GPIO26-GPIO48
+    GPIO_OPTIONS: list[str] = [f"GPIO{i}" for i in range(22)] + [f"GPIO{i}" for i in range(26, 49)]
+    FREQUENCY_OPTIONS: list[str] = ["50Hz", "60Hz", "100Hz", "120Hz", "440Hz", "1000Hz", "10000Hz", "44100Hz", "48000Hz", "96000Hz"]
+    GAMMA: float = 2.3  # Gamma correction value (2.3 for non-linear brightness)
+
+    def __init__(self, parent: SerialPlotterApp) -> None:
+        self.parent: SerialPlotterApp = parent
+        self.window: tk.Toplevel = tk.Toplevel(parent.master)
+        self.window.title("Light Control")
+        self.window.geometry("600x170")
+        
+        # Handle window close to hide instead of destroy
+        self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
+        
+        # Initialize state
+        self.light_initialized: bool = False
+        self.light_power_pending: float | None = None
+        self.light_power_send_scheduled: bool = False
+        
+        # Create main frame
+        main_frame: tk.Frame = tk.Frame(master=self.window)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # LED Light section
+        light_frame: tk.LabelFrame = tk.LabelFrame(
+            master=main_frame,
+            text="LED Light",
+            font=("Arial", 10, "bold"),
+            padx=10,
+            pady=10,
+        )
+        light_frame.pack(fill=tk.X, pady=5)
+        
+        # GPIO and Frequency on same line
+        config_frame: tk.Frame = tk.Frame(master=light_frame)
+        config_frame.pack(fill=tk.X, pady=5)
+        
+        # GPIO frame (left)
+        gpio_frame: tk.Frame = tk.Frame(master=config_frame)
+        gpio_frame.pack(side=tk.LEFT, padx=5)
+        
+        gpio_label: tk.Label = tk.Label(master=gpio_frame, text="GPIO:", anchor="w")
+        gpio_label.pack(side=tk.LEFT, padx=2)
+        
+        self.gpio_combobox: ttk.Combobox = ttk.Combobox(
+            master=gpio_frame,
+            values=self.GPIO_OPTIONS,
+            state="readonly",
+            width=12,
+        )
+        self.gpio_combobox.set("GPIO14")
+        self.gpio_combobox.pack(side=tk.LEFT, padx=2)
+        
+        # Frequency frame (center)
+        freq_frame: tk.Frame = tk.Frame(master=config_frame)
+        freq_frame.pack(side=tk.LEFT, padx=5)
+        
+        freq_label: tk.Label = tk.Label(master=freq_frame, text="Frequency:", anchor="w")
+        freq_label.pack(side=tk.LEFT, padx=2)
+        
+        self.frequency_combobox: ttk.Combobox = ttk.Combobox(
+            master=freq_frame,
+            values=self.FREQUENCY_OPTIONS,
+            state="readonly",
+            width=12,
+        )
+        self.frequency_combobox.set("44100Hz")
+        self.frequency_combobox.pack(side=tk.LEFT, padx=2)
+        
+        # Init and Deinit buttons on right
+        button_frame: tk.Frame = tk.Frame(master=config_frame)
+        button_frame.pack(side=tk.RIGHT, padx=5)
+        
+        self.init_button: tk.Button = tk.Button(
+            master=button_frame,
+            text="Init",
+            command=self.init_light,
+            width=10,
+        )
+        self.init_button.pack(side=tk.LEFT, padx=2)
+        
+        self.deinit_button: tk.Button = tk.Button(
+            master=button_frame,
+            text="Deinit",
+            command=self.deinit_light,
+            width=10,
+        )
+        self.deinit_button.pack(side=tk.LEFT, padx=2)
+        
+        # Power level slider (0-7 mapped to 0-256 with gamma 2.2)
+        power_frame: tk.Frame = tk.Frame(master=light_frame)
+        power_frame.pack(fill=tk.X, pady=(10, 5))
+        
+        power_label: tk.Label = tk.Label(master=power_frame, text="Power Level:", anchor="w")
+        power_label.pack(side=tk.LEFT, padx=5)
+        
+        # Create a frame for slider and value display
+        slider_container: tk.Frame = tk.Frame(master=power_frame)
+        slider_container.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        # Power slider with range 0 to 7
+        self.power_slider: tk.Scale = tk.Scale(
+            master=slider_container,
+            from_=0,
+            to=7,
+            orient=tk.HORIZONTAL,
+            command=lambda val: self._on_power_slider_changed(int(val)),
+            state="disabled",  # Start disabled, enabled only when light is initialized
+        )
+        self.power_slider.set(0)
+        self.power_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Bind right-click to reset slider to zero
+        slider_container.bind("<Button-3>", lambda event: self._reset_power_slider())
+        
+        # Power value display label
+        self.power_value_label: tk.Label = tk.Label(
+            master=slider_container,
+            text="0/256",
+            width=8,
+            anchor="center",
+            bg="#90EE90",
+            fg="black",
+            relief=tk.SUNKEN,
+            bd=2,
+        )
+        self.power_value_label.pack(side=tk.LEFT, padx=5)
+        
+        # Bind all mouse clicks to reset slider to zero
+        self.power_value_label.bind("<Button-1>", lambda event: self._reset_power_slider())
+        self.power_value_label.bind("<Button-2>", lambda event: self._reset_power_slider())
+        self.power_value_label.bind("<Button-3>", lambda event: self._reset_power_slider())
+        
+        # Update button states
+        self.update_light_controls_state()
+
+    def _level_to_pwm(self, level: int) -> int:
+        """Convert power level (0-7) to PWM value (0-256) using gamma correction."""
+        normalized = level / 7.0  # Normalize to 0-1
+        gamma_corrected = pow(normalized, self.GAMMA)  # Apply gamma correction (gamma = 1/2.2)
+        pwm_value = int(gamma_corrected * 256)
+        return min(pwm_value, 256)  # Ensure we don't exceed 256
+
+    def _on_power_slider_changed(self, level: int) -> None:
+        """Handle power slider change with throttling."""
+        pwm_value = self._level_to_pwm(level)
+        
+        # Update the value display label
+        self.power_value_label.config(text=f"{pwm_value}/256")
+        
+        # Store the pending power value
+        self.light_power_pending = pwm_value
+        
+        # If no send is already scheduled, schedule one after 75ms
+        if not self.light_power_send_scheduled:
+            self.light_power_send_scheduled = True
+            self.parent.master.after(75, self._send_pending_power)
+
+    def _send_pending_power(self) -> None:
+        """Send the latest pending power value for the light."""
+        if self.light_power_pending is not None and self.gpio_combobox is not None:
+            pwm_value = self.light_power_pending
+            gpio_str: str = self.gpio_combobox.get()
+            gpio_num = int(gpio_str.replace("GPIO", ""))
+            command = f"ledc {gpio_num} set {pwm_value}"
+            threading.Thread(
+                target=self._send_command_to_serial,
+                args=(command,),
+                daemon=True
+            ).start()
+            self.light_power_pending = None
+        
+        # Mark that send is no longer scheduled
+        self.light_power_send_scheduled = False
+
+    def _reset_power_slider(self) -> None:
+        """Reset power slider to zero on right-click."""
+        self.power_slider.set(0)
+
+    def _send_command_to_serial(self, command: str) -> None:
+        """Helper function to send a command to serial via parent SerialPlotterApp."""
+        try:
+            if not command.endswith("\n"):
+                command += "\n"
+            
+            if self.parent.serial.is_connected():
+                self.parent.serial.send(command)
+                # Log the command
+                threading.Thread(
+                    target=self.parent._async_log_and_display,
+                    args=(command, True),
+                    daemon=True
+                ).start()
+            else:
+                print("Serial port is not connected")
+        except Exception as e:
+            print(f"Error sending command: {e}")
+
+    def init_light(self) -> None:
+        """Send init command for the light with GPIO and frequency."""
+        if self.gpio_combobox is None:
+            print("Error: GPIO combobox is not initialized")
+            return
+        
+        gpio_str: str = self.gpio_combobox.get()
+        gpio_num = int(gpio_str.replace("GPIO", ""))
+        
+        freq_str: str = self.frequency_combobox.get()
+        # Extract frequency number from string (e.g., "44100Hz" -> "44100")
+        freq_num = freq_str.replace("Hz", "")
+        
+        # Send config command first: ledc config [Hz]
+        config_command = f"ledc config {freq_num}"
+        self.parent.master.after(0, lambda cmd=config_command: self._send_command_to_serial(cmd))
+        
+        # Send init command: ledc [gpio] init 0
+        init_command = f"ledc {gpio_num} init 0"
+        self.parent.master.after(200, lambda cmd=init_command: self._send_command_to_serial(cmd))
+        
+        self.light_initialized = True
+        self.parent.master.after(400, self.update_light_config_state)
+        self.parent.master.after(400, self.update_light_controls_state)
+
+    def deinit_light(self) -> None:
+        """Send deinit command for the light."""
+        if self.gpio_combobox is None:
+            print("Error: GPIO combobox is not initialized")
+            return
+        
+        gpio_str: str = self.gpio_combobox.get()
+        gpio_num = int(gpio_str.replace("GPIO", ""))
+        
+        # Send set 0 command first: ledc [gpio] set 0
+        set_zero_command = f"ledc {gpio_num} set 0"
+        self.parent.master.after(0, lambda cmd=set_zero_command: self._send_command_to_serial(cmd))
+        
+        # Send deinit command: ledc [gpio] deinit
+        deinit_command = f"ledc {gpio_num} deinit"
+        self.parent.master.after(200, lambda cmd=deinit_command: self._send_command_to_serial(cmd))
+        
+        # Send delete command: ledc delete
+        delete_command = "ledc delete"
+        self.parent.master.after(400, lambda cmd=delete_command: self._send_command_to_serial(cmd))
+        
+        self.light_initialized = False
+        # Reset power slider to 0.00 before unlocking it
+        self.power_slider.set(0)
+        self.parent.master.after(600, self.update_light_config_state)
+        self.parent.master.after(600, self.update_light_controls_state)
+
+    def update_light_config_state(self) -> None:
+        """Update UI state based on initialization status."""
+        # Lock/unlock GPIO combobox
+        self.gpio_combobox.config(state="disabled" if self.light_initialized else "readonly")
+        
+        # Lock/unlock Frequency combobox
+        self.frequency_combobox.config(state="disabled" if self.light_initialized else "readonly")
+        
+        # Enable/disable Power slider
+        self.power_slider.config(state="normal" if self.light_initialized else "disabled")
+
+    def update_light_controls_state(self) -> None:
+        """Update button state based on serial connection and initialization."""
+        is_connected = self.parent.serial.is_connected()
+        
+        if not is_connected:
+            self.init_button.config(state="disabled")
+            self.deinit_button.config(state="disabled")
+        else:
+            # Enable Init button if not initialized
+            self.init_button.config(state="normal" if not self.light_initialized else "disabled")
+            # Enable Deinit button if initialized
+            self.deinit_button.config(state="normal" if self.light_initialized else "disabled")
+
+    def on_window_close(self) -> None:
+        """Hide window instead of closing it."""
+        self.window.withdraw()
 
 
 def on_closing():
