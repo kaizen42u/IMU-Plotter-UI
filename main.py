@@ -2,7 +2,6 @@ import re
 import sys
 import threading
 import tkinter as tk
-from time import sleep
 from tkinter import ttk
 import csv
 import os
@@ -12,7 +11,6 @@ from typing import List, Optional
 import matplotlib
 import pandas as pd
 import serial
-import serial.tools.list_ports
 
 from serialHandler import serialHandler
 from ansiEncoding import ANSI
@@ -92,18 +90,39 @@ class SerialPlotterApp:
 
     def setup_ui(self) -> None:
 
+        # Create a frame to group COM port and Baudrate together
+        self.connection_frame = tk.Frame(master=self.root)
+        self.connection_frame.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+
+        # Create a label for COM port selection
+        self.port_selection_label = tk.Label(master=self.connection_frame, text="COM Port:")
+        self.port_selection_label.pack(side=tk.LEFT, padx=5)
+
         # Create a dropdown menu for available ports
         self.port_selection_combobox = tkAutocompleteCombobox(
-            master=self.root, state="readonly"
+            master=self.connection_frame, state="readonly"
         )
-        self.port_selection_combobox.grid(row=0, column=0)
+        self.port_selection_combobox.pack(side=tk.LEFT, padx=5)
+
+        # Create a label for baudrate selection
+        self.baudrate_label = tk.Label(master=self.connection_frame, text="Baudrate:")
+        self.baudrate_label.pack(side=tk.LEFT, padx=5)
+
+        # Create a dropdown menu for baudrate selection, read write, default 115200
+        self.baudrate_combobox = tkAutocompleteCombobox(
+            master=self.connection_frame, sort_key=lambda x: int(x)
+        )
+        common_baudrates = ["9600", "14400", "19200", "38400", "57600", "115200", "230400", "460800", "921600"]
+        self.baudrate_combobox.set_completion_list(common_baudrates)
+        self.baudrate_combobox.set("115200")
+        self.baudrate_combobox.pack(side=tk.LEFT, padx=5)
 
         # Create serial connect/disconnect button
         self.serial_connect_toggle_button = tk.Button(
             master=self.root, text="null", command=self.serial_connect_toggle
         )
         self.serial_connect_toggle_button.config(width=20)
-        self.serial_connect_toggle_button.grid(row=0, column=1)
+        self.serial_connect_toggle_button.grid(row=0, column=1, padx=5)
 
         # Create terminal auto scroll checkbox
         self.terminal_auto_scroll_var = tk.BooleanVar(master=self.root, value=True)
@@ -116,17 +135,40 @@ class SerialPlotterApp:
             ),
         )
         self.terminal_auto_scroll_checkbox.config(width=20)
-        self.terminal_auto_scroll_checkbox.grid(row=0, column=2)
+        self.terminal_auto_scroll_checkbox.grid(row=0, column=2, padx=5)
 
         # Create the serial terminal
         self.terminal = tkTerminal(master=self.root, width=TERMINAL_MAX_WIDTH)
         self.terminal.grid(row=1, column=0, columnspan=3)
 
+        # Create a frame for the send command section
+        self.send_command_frame = tk.Frame(master=self.root)
+        self.send_command_frame.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        
+        # Create a label for the send command textfield
+        self.send_command_label = tk.Label(
+            master=self.send_command_frame, text="Send Command:"
+        )
+        self.send_command_label.pack(side=tk.LEFT, padx=5)
+        
+        # Create a textfield for sending commands
+        self.send_command_entry = tk.Entry(master=self.send_command_frame)
+        self.send_command_entry.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+        
+        # Bind Enter key to send command
+        self.send_command_entry.bind("<Return>", lambda event: self.send_command())
+        
+        # Create a send button
+        self.send_command_button = tk.Button(
+            master=self.send_command_frame, text="Send", command=self.send_command
+        )
+        self.send_command_button.pack(side=tk.LEFT, padx=5)
+
         # Create figure to draw accelerometer data
         self.accelerometer_figure = tkPlotGraph(
             master=self.root, title="Linear Acceleration (G)", max_samples=GRAPH_MAX_SAMPLES
         )
-        self.accelerometer_figure.grid(row=2, column=0)
+        self.accelerometer_figure.grid(row=3, column=0)
         self.accelerometer_figure.set_ylim(
             low=-GRAPH_ACCEL_Y_LIMIT, high=GRAPH_ACCEL_Y_LIMIT
         )
@@ -137,14 +179,14 @@ class SerialPlotterApp:
             title="Euler Angle (Degree)",
             max_samples=GRAPH_MAX_SAMPLES,
         )
-        self.gyroscope_figure.grid(row=2, column=1)
+        self.gyroscope_figure.grid(row=3, column=1)
         self.gyroscope_figure.set_ylim(low=-GRAPH_GYRO_Y_LIMIT, high=GRAPH_GYRO_Y_LIMIT)
 
         # Create a frame containing options
         self.options_frame = tk.Frame(master=self.root)
         self.options_frame.grid_rowconfigure(index=0, weight=1)
         self.options_frame.grid_columnconfigure(index=0, weight=1)
-        self.options_frame.grid(row=2, column=2)
+        self.options_frame.grid(row=3, column=2)
 
         # Create show/hide IMU data button
         self.imu_data_toggle_button = tk.Button(
@@ -231,9 +273,17 @@ class SerialPlotterApp:
         # Otherwise, try to connect
         self.reset_graphs()
         try:
-            self.serial.connect(self.port_selection_combobox.get())
+            # Get baudrate from combobox, default to 115200 if not set
+            baudrate_str = self.baudrate_combobox.get()
+            baudrate = int(baudrate_str) if baudrate_str else 115200
+            
+            self.serial.connect(self.port_selection_combobox.get(), baudrate=baudrate)
             self.serial_connect_toggle_button_update()
 
+        except ValueError:
+            self.terminal_show_message(
+                f"Invalid baudrate: {self.baudrate_combobox.get()}"
+            )
         except serial.SerialException as e:
             self.terminal_show_message(
                 f"Could not open port [{self.port_selection_combobox.get()}]: {e}"
@@ -344,6 +394,30 @@ class SerialPlotterApp:
         self.accelerometer_figure.clear()
         self.gyroscope_figure.clear()
 
+    def send_command(self) -> None:
+        """Send the command entered in the textfield over the serial port."""
+        command = self.send_command_entry.get()
+        if not command:
+            return
+        
+        if not self.serial.is_connected():
+            self.terminal_show_message("Error: Serial port is not connected")
+            return
+        
+        # Append newline if not already present
+        if not command.endswith("\n"):
+            command += "\n"
+        
+        success = self.serial.send(command)
+        if success:
+            self.terminal_show_message(f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}")
+        else:
+            self.terminal_show_message(f"{ANSI.bRed}Failed to send command{ANSI.default}")
+        
+        # Keep textfield populated but select all text for quick resend
+        self.send_command_entry.select_range(0, tk.END)
+        self.send_command_entry.focus()
+
     def draw_graphs(self) -> None:
         # while not self.killed:
             # sleep(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL)
@@ -351,10 +425,12 @@ class SerialPlotterApp:
             # wait returns immediately if stop_event set, otherwise sleeps the interval
             self.stop_event.wait(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL)
             
-            # Update graph
+            # Update graph only if data was modified to reduce CPU usage
             try:
-                self.accelerometer_figure.draw()
-                self.gyroscope_figure.draw()
+                if self.accelerometer_figure.data_modified:
+                    self.accelerometer_figure.draw()
+                if self.gyroscope_figure.data_modified:
+                    self.gyroscope_figure.draw()
 
             except RuntimeError:
                 self.terminal_show_message(str(sys.exc_info()))
