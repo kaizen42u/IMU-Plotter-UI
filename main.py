@@ -28,8 +28,8 @@ THREAD_PLOTTER_DRAW_GRAPH_INTERVAL = 0.05
 
 class SerialPlotterApp:
 
-    def __init__(self, root: tk.Misc) -> None:
-        self.root: tk.Misc = root
+    def __init__(self, master: tk.Tk) -> None:
+        self.master: tk.Tk = master
         self.killed: bool = False
         self.stop_event = threading.Event()
         self.show_imu_data: bool = True
@@ -58,7 +58,7 @@ class SerialPlotterApp:
     def setup_ui(self) -> None:
 
         # Create a main control frame to group all top controls
-        self.control_frame = tk.Frame(master=self.root)
+        self.control_frame = tk.Frame(master=self.master)
         self.control_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
         # Create a label for COM port selection
@@ -92,7 +92,7 @@ class SerialPlotterApp:
         self.serial_connect_toggle_button.grid(row=0, column=4, padx=5)
 
         # Create terminal auto scroll checkbox
-        self.terminal_auto_scroll_var = tk.BooleanVar(master=self.root, value=True)
+        self.terminal_auto_scroll_var = tk.BooleanVar(master=self.master, value=True)
         self.terminal_auto_scroll_checkbox = tk.Checkbutton(
             master=self.control_frame,
             text="Auto Scroll",
@@ -105,11 +105,11 @@ class SerialPlotterApp:
         self.terminal_auto_scroll_checkbox.grid(row=0, column=5, padx=5)
 
         # Create the serial terminal
-        self.terminal = tkTerminal(master=self.root, width=TERMINAL_MAX_WIDTH)
+        self.terminal = tkTerminal(master=self.master, width=TERMINAL_MAX_WIDTH)
         self.terminal.grid(row=1, column=0, sticky="ns", padx=5)
 
         # Create a frame for the send command section
-        self.send_command_frame = tk.Frame(master=self.root)
+        self.send_command_frame = tk.Frame(master=self.master)
         self.send_command_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
         self.send_command_frame.grid_columnconfigure(1, weight=1)
         
@@ -133,7 +133,7 @@ class SerialPlotterApp:
         self.send_command_button.grid(row=0, column=2, padx=5)
 
         # Create a frame to hold graphs and options
-        self.graphs_frame = tk.Frame(master=self.root, bg="#E0E8F0")
+        self.graphs_frame = tk.Frame(master=self.master, bg="#E0E8F0")
         self.graphs_frame.grid(row=3, column=0, sticky="ew", padx=5)
         # self.graphs_frame.grid_columnconfigure(0, weight=1)
         # self.graphs_frame.grid_columnconfigure(1, weight=1)
@@ -175,21 +175,14 @@ class SerialPlotterApp:
         self.imu_data_toggle_button.grid(row=0, column=0)
 
         # Configure the grid to expand
-        self.root.grid_rowconfigure(1, weight=1)
-        self.root.grid_columnconfigure(0, weight=1)
+        self.master.grid_rowconfigure(1, weight=1)
+        self.master.grid_columnconfigure(0, weight=1)
 
     def close(self) -> None:
         # Flag the process as dead and close serial port
         self.killed = True
         self.stop_event.set()
         self.serial.close()
-
-        self.draw_graphs_thread.join(timeout=1)
-        if self.draw_graphs_thread.is_alive():
-            print("draw_graphs_thread did not exit in time")
-
-        #! TODO: Fix draw_graphs_thread not exiting.
-        print("[W] Close terminal to exit the program.")
 
     def serial_line_received(self, line: str) -> None:
         self.update_graphs(line)
@@ -214,12 +207,12 @@ class SerialPlotterApp:
             and selected_port in ports
             and not self.serial.is_connected()
         ):
-            self.root.after(100, self.attempt_reconnect)
+            self.master.after(100, self.attempt_reconnect)
 
     def serial_disconnected(self, port: str) -> None:
         self.serial_connect_toggle_button_update()
         if self._reconnect_enabled:
-            self.root.after(100, self.attempt_reconnect)
+            self.master.after(100, self.attempt_reconnect)
 
     def attempt_reconnect(self) -> None:
         selected_port = self.port_selection_combobox.get()
@@ -242,7 +235,7 @@ class SerialPlotterApp:
                 self._reconnect_attempts += 1
                 print(f"Auto-reconnect failed (attempt {self._reconnect_attempts}): {e}")
                 if self._reconnect_attempts < 5:
-                    self.root.after(100, self.attempt_reconnect)
+                    self.master.after(100, self.attempt_reconnect)
                 else:
                     print(f"Auto-reconnect failed after 5 attempts. Manual reconnection required.")
                     self._reconnect_attempts = 0
@@ -372,11 +365,10 @@ class SerialPlotterApp:
         self.send_command_entry.focus()
 
     def draw_graphs(self) -> None:
-        # while not self.killed:
-            # sleep(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL)
         while not self.stop_event.is_set():
-            # wait returns immediately if stop_event set, otherwise sleeps the interval
-            self.stop_event.wait(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL)
+            # Use wait() return value to break immediately if stop_event is set
+            if self.stop_event.wait(THREAD_PLOTTER_DRAW_GRAPH_INTERVAL):
+                break
             
             # Update graph only if data was modified to reduce CPU usage
             try:
@@ -384,14 +376,10 @@ class SerialPlotterApp:
                     self.accelerometer_figure.draw()
                 if self.gyroscope_figure.data_modified:
                     self.gyroscope_figure.draw()
-
             except RuntimeError:
-                self.terminal_show_message(str(sys.exc_info()))
                 pass
-
-            except Exception as err:
-                self.terminal_show_message(f"Graphing Exception: {err}")
-        print("Graphing thread exited")
+            except Exception:
+                pass
 
     def terminal_show_message(self, message: str) -> None:
         self.terminal.write(f"{ANSI.bBrightMagenta}{message}{ANSI.default} \n")
@@ -412,6 +400,6 @@ if __name__ == "__main__":
     root.title("IMU Plotter")
     root.geometry("1000x720")
 
-    serial_app = SerialPlotterApp(root)
+    serial_app = SerialPlotterApp(master=root)
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
