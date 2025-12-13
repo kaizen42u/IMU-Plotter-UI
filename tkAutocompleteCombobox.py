@@ -4,9 +4,23 @@ from tkinter import ttk
 
 # Custom Combobox class with autocomplete functionality
 class tkAutocompleteCombobox(ttk.Combobox):
+    def __init__(self, *args, sort_key=None, **kwargs):
+        """
+        Initialize the autocomplete combobox.
+        
+        Args:
+            sort_key: Optional callable to customize sorting. If None, uses default string sorting.
+                     Example: sort_key=lambda x: int(x) for numeric sorting
+        """
+        super().__init__(*args, **kwargs)
+        self._sort_key = sort_key
+    
     def update_completion_list(self, completion_list: list[str]) -> None:
         # Remove duplicates and sort the list
-        self._completion_list = sorted(set(completion_list))
+        if self._sort_key:
+            self._completion_list = sorted(set(completion_list), key=self._sort_key)
+        else:
+            self._completion_list = sorted(set(completion_list))
         self._hits = []
         self._hit_index = 0
         self.position = 0
