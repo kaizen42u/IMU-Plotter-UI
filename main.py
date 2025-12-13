@@ -2,14 +2,10 @@ import re
 import sys
 import threading
 import tkinter as tk
-from tkinter import ttk
-import csv
-import os
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 import matplotlib
-import pandas as pd
 import serial
 
 from serialHandler import serialHandler
@@ -22,27 +18,12 @@ from tkTerminal import tkTerminal
 matplotlib.use("Agg")
 
 
-SAVEDATA_FOLDER_PATH = "./savedata"
 TERMINAL_MAX_WIDTH = 180
 GRAPH_MAX_SAMPLES = 50
 GRAPH_ACCEL_Y_LIMIT = 16
 GRAPH_GYRO_Y_LIMIT = 200
-SERIAL_IMU_DATA_REGEX = r"\[IMU\] \[\s*(\d+) ms\], Acc: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] G, Gyro: \[\s*([-.\d]+),\s*([-.\d]+),\s*([-.\d]+)\] DPS"
-SERIAL_IMU_BNO05_DATA_REGEX = r"(?:I\s*\(\s*(\d+)\s*\)\s*\w+:\s*)?L\.Accel\s*\(m/s\)\s*-\s*x:\s*([-+]?\d+(?:\.\d+)?)\s*y:\s*([-+]?\d+(?:\.\d+)?)\s*z:\s*([-+]?\d+(?:\.\d+)?)\s*\|\s*Euler\s*\(deg\)\s*-\s*yaw:\s*([-+]?\d+(?:\.\d+)?)\s*pitch:\s*([-+]?\d+(?:\.\d+)?)\s*roll:\s*([-+]?\d+(?:\.\d+)?)"
+SERIAL_IMU_BNO085_DATA_REGEX = r"(?:I\s*\(\s*(\d+)\s*\)\s*\w+:\s*)?L\.Accel\s*\(m/s\)\s*-\s*x:\s*([-+]?\d+(?:\.\d+)?)\s*y:\s*([-+]?\d+(?:\.\d+)?)\s*z:\s*([-+]?\d+(?:\.\d+)?)\s*\|\s*Euler\s*\(deg\)\s*-\s*yaw:\s*([-+]?\d+(?:\.\d+)?)\s*pitch:\s*([-+]?\d+(?:\.\d+)?)\s*roll:\s*([-+]?\d+(?:\.\d+)?)"
 THREAD_PLOTTER_DRAW_GRAPH_INTERVAL = 0.05
-THREAD_DATA_VIEWER_UPDATE_INTERVAL = 0.10
-
-
-# Return a list of gestures
-def get_gestures() -> list[str]:
-    if not os.path.exists(SAVEDATA_FOLDER_PATH) or not os.listdir(SAVEDATA_FOLDER_PATH):
-        return ["idle"]
-    else:
-        return [
-            name
-            for name in os.listdir(SAVEDATA_FOLDER_PATH)
-            if os.path.isdir(os.path.join(SAVEDATA_FOLDER_PATH, name))
-        ]
 
 
 class SerialPlotterApp:
@@ -52,14 +33,15 @@ class SerialPlotterApp:
         self.killed: bool = False
         self.stop_event = threading.Event()
         self.show_imu_data: bool = True
-        self.show_model_result: bool = True
+        
+        self._reconnect_enabled: bool = False  # Only enabled after manual connect, disabled on manual disconnect
+        self._reconnect_attempts: int = 0
 
         self.serial: serialHandler = serialHandler()
 
         self.setup_ui()
 
         # Get a list of all available serial ports
-        #! TODO: update `ports` on device change
         ports = self.serial.get_ports()
         self.port_selection_combobox.set_completion_list(ports)
         self.serial_connect_toggle_button_update()
@@ -67,67 +49,52 @@ class SerialPlotterApp:
         self.serial.set_line_received_callback(self.serial_line_received)
         self.serial.set_log_callback(self.serial_log)
         self.serial.set_ports_changed_callback(self.serial_ports_changed)
+        self.serial.set_disconnect_callback(self.serial_disconnected)
 
-        # Attach event handler on new gesture selected
-        def gesture_selected_create_folder(event: tk.Event) -> None:
-            # Create directory if it doesn't exist
-            os.makedirs(
-                f"{SAVEDATA_FOLDER_PATH}/{self.gesture_selected_combobox.get()}",
-                exist_ok=True,
-            )
-            self.terminal_show_message(
-                f"Gesture selected: {ANSI.bCyan}{self.gesture_selected_combobox.get()}{ANSI.default}"
-            )
-
-        self.gesture_selected_combobox.bind(
-            "<<ComboboxSelected>>", gesture_selected_create_folder
-        )
-
-        # Create threads to draw figures and serial port reading
-        # self.draw_graphs_thread = threading.Thread(target=self.draw_graphs)
+        # Create thread to draw graphs
         self.draw_graphs_thread = threading.Thread(target=self.draw_graphs, daemon=True)
         self.draw_graphs_thread.start()
 
     def setup_ui(self) -> None:
 
-        # Create a frame to group COM port and Baudrate together
-        self.connection_frame = tk.Frame(master=self.root)
-        self.connection_frame.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        # Create a main control frame to group all top controls
+        self.control_frame = tk.Frame(master=self.root)
+        self.control_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
         # Create a label for COM port selection
-        self.port_selection_label = tk.Label(master=self.connection_frame, text="COM Port:")
-        self.port_selection_label.pack(side=tk.LEFT, padx=5)
+        self.port_selection_label = tk.Label(master=self.control_frame, text="COM Port:")
+        self.port_selection_label.grid(row=0, column=0, padx=5)
 
         # Create a dropdown menu for available ports
         self.port_selection_combobox = tkAutocompleteCombobox(
-            master=self.connection_frame, state="readonly"
+            master=self.control_frame, state="readonly"
         )
-        self.port_selection_combobox.pack(side=tk.LEFT, padx=5)
+        self.port_selection_combobox.grid(row=0, column=1, padx=(5, 15))
 
         # Create a label for baudrate selection
-        self.baudrate_label = tk.Label(master=self.connection_frame, text="Baudrate:")
-        self.baudrate_label.pack(side=tk.LEFT, padx=5)
+        self.baudrate_label = tk.Label(master=self.control_frame, text="Baudrate:")
+        self.baudrate_label.grid(row=0, column=2, padx=5)
 
         # Create a dropdown menu for baudrate selection, read write, default 115200
         self.baudrate_combobox = tkAutocompleteCombobox(
-            master=self.connection_frame, sort_key=lambda x: int(x)
+            master=self.control_frame, sort_key=lambda x: int(x)
         )
         common_baudrates = ["9600", "14400", "19200", "38400", "57600", "115200", "230400", "460800", "921600"]
         self.baudrate_combobox.set_completion_list(common_baudrates)
         self.baudrate_combobox.set("115200")
-        self.baudrate_combobox.pack(side=tk.LEFT, padx=5)
+        self.baudrate_combobox.grid(row=0, column=3, padx=(5, 15))
 
         # Create serial connect/disconnect button
         self.serial_connect_toggle_button = tk.Button(
-            master=self.root, text="null", command=self.serial_connect_toggle
+            master=self.control_frame, text="null", command=self.serial_connect_toggle
         )
         self.serial_connect_toggle_button.config(width=20)
-        self.serial_connect_toggle_button.grid(row=0, column=1, padx=5)
+        self.serial_connect_toggle_button.grid(row=0, column=4, padx=5)
 
         # Create terminal auto scroll checkbox
         self.terminal_auto_scroll_var = tk.BooleanVar(master=self.root, value=True)
         self.terminal_auto_scroll_checkbox = tk.Checkbutton(
-            master=self.root,
+            master=self.control_frame,
             text="Auto Scroll",
             variable=self.terminal_auto_scroll_var,
             command=lambda: self.terminal.set_autoscroll(
@@ -135,25 +102,26 @@ class SerialPlotterApp:
             ),
         )
         self.terminal_auto_scroll_checkbox.config(width=20)
-        self.terminal_auto_scroll_checkbox.grid(row=0, column=2, padx=5)
+        self.terminal_auto_scroll_checkbox.grid(row=0, column=5, padx=5)
 
         # Create the serial terminal
         self.terminal = tkTerminal(master=self.root, width=TERMINAL_MAX_WIDTH)
-        self.terminal.grid(row=1, column=0, columnspan=3)
+        self.terminal.grid(row=1, column=0, padx=5) # no sticky
 
         # Create a frame for the send command section
         self.send_command_frame = tk.Frame(master=self.root)
-        self.send_command_frame.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        self.send_command_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self.send_command_frame.grid_columnconfigure(1, weight=1)
         
         # Create a label for the send command textfield
         self.send_command_label = tk.Label(
             master=self.send_command_frame, text="Send Command:"
         )
-        self.send_command_label.pack(side=tk.LEFT, padx=5)
+        self.send_command_label.grid(row=0, column=0, padx=5)
         
         # Create a textfield for sending commands
         self.send_command_entry = tk.Entry(master=self.send_command_frame)
-        self.send_command_entry.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+        self.send_command_entry.grid(row=0, column=1, sticky="ew", padx=5)
         
         # Bind Enter key to send command
         self.send_command_entry.bind("<Return>", lambda event: self.send_command())
@@ -162,31 +130,37 @@ class SerialPlotterApp:
         self.send_command_button = tk.Button(
             master=self.send_command_frame, text="Send", command=self.send_command
         )
-        self.send_command_button.pack(side=tk.LEFT, padx=5)
+        self.send_command_button.grid(row=0, column=2, padx=5)
+
+        # Create a frame to hold graphs and options
+        self.graphs_frame = tk.Frame(master=self.root)
+        self.graphs_frame.grid(row=3, column=0, sticky="ew", padx=5)
+        self.graphs_frame.grid_columnconfigure(0, weight=1)
+        self.graphs_frame.grid_columnconfigure(1, weight=1)
 
         # Create figure to draw accelerometer data
         self.accelerometer_figure = tkPlotGraph(
-            master=self.root, title="Linear Acceleration (G)", max_samples=GRAPH_MAX_SAMPLES
+            master=self.graphs_frame, title="Linear Acceleration (G)", max_samples=GRAPH_MAX_SAMPLES
         )
-        self.accelerometer_figure.grid(row=3, column=0)
+        self.accelerometer_figure.grid(row=0, column=0, padx=2)
         self.accelerometer_figure.set_ylim(
             low=-GRAPH_ACCEL_Y_LIMIT, high=GRAPH_ACCEL_Y_LIMIT
         )
 
         # Create figure to draw gyroscope data
         self.gyroscope_figure = tkPlotGraph(
-            master=self.root,
+            master=self.graphs_frame,
             title="Euler Angle (Degree)",
             max_samples=GRAPH_MAX_SAMPLES,
         )
-        self.gyroscope_figure.grid(row=3, column=1)
+        self.gyroscope_figure.grid(row=0, column=1, padx=2)
         self.gyroscope_figure.set_ylim(low=-GRAPH_GYRO_Y_LIMIT, high=GRAPH_GYRO_Y_LIMIT)
 
         # Create a frame containing options
-        self.options_frame = tk.Frame(master=self.root)
+        self.options_frame = tk.Frame(master=self.graphs_frame)
         self.options_frame.grid_rowconfigure(index=0, weight=1)
         self.options_frame.grid_columnconfigure(index=0, weight=1)
-        self.options_frame.grid(row=3, column=2)
+        self.options_frame.grid(row=0, column=2, sticky="ew", padx=2)
 
         # Create show/hide IMU data button
         self.imu_data_toggle_button = tk.Button(
@@ -197,40 +171,10 @@ class SerialPlotterApp:
         self.imu_data_toggle_button.config(width=20)
         self.imu_data_toggle_button.grid(row=0, column=0)
 
-        # Create show/hide model result button
-        self.model_result_toggle_button = tk.Button(
-            master=self.options_frame,
-            text="Hide model result",
-            command=self.model_result_toggle,
-        )
-        self.model_result_toggle_button.config(width=20)
-        self.model_result_toggle_button.grid(row=1, column=0)
-
-        # Create save to .csv button, this saves the graph data as csv
-        # Save to: "{folder_path}/gesture1/[datetime].csv", ..., "{folder_path}/gesture1/[datetime].csv".
-        # Format: Time, aX, aY, aZ, gX, gY, gZ
-        self.gesture_save_button = tk.Button(
-            master=self.options_frame, text="Save as .csv", command=self.save_csv
-        )
-        self.gesture_save_button.config(width=20)
-        self.gesture_save_button.grid(row=2, column=0)
-
-        # Create a label for the gesture selection
-        self.gesture_selected_label = tk.Label(
-            master=self.options_frame, text="Selected Gesture:"
-        )
-        self.gesture_selected_label.grid(row=3, column=0)
-
-        # Create gesture selection box
-        self.gesture_selected_combobox = tkAutocompleteCombobox(self.options_frame)
-        self.gesture_selected_combobox.set_completion_list(get_gestures())
-        self.gesture_selected_combobox.grid(row=4, column=0)
-
         # Configure the grid to expand
         self.root.grid_rowconfigure(1, weight=1)
+        self.root.grid_rowconfigure(3, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_columnconfigure(1, weight=1)
-        self.root.grid_columnconfigure(2, weight=1)
 
     def close(self) -> None:
         # Flag the process as dead and close serial port
@@ -256,18 +200,67 @@ class SerialPlotterApp:
         self.port_selection_combobox.set_completion_list(
             list(set(self.port_selection_combobox.get_completion_list() + ports))
         )
+        # Update button state in case of disconnect callback
         self.serial_connect_toggle_button_update()
-        self.terminal_show_message(f"Ports changed: {ports}")
+        print(f"Ports changed: {ports}")
+        
+        # Check if previously selected port came back online and trigger reconnect
+        selected_port = self.port_selection_combobox.get()
+        if (
+            self._reconnect_enabled
+            and selected_port
+            and selected_port in ports
+            and not self.serial.is_connected()
+        ):
+            self.root.after(100, self.attempt_reconnect)
+
+    def serial_disconnected(self, port: str) -> None:
+        self.serial_connect_toggle_button_update()
+        if self._reconnect_enabled:
+            self.root.after(100, self.attempt_reconnect)
+
+    def attempt_reconnect(self) -> None:
+        selected_port = self.port_selection_combobox.get()
+        current_ports = self.serial.get_ports()
+        
+        if (
+            selected_port
+            and selected_port in current_ports
+            and not self.serial.is_connected()
+        ):
+            try:
+                print(f"Attempting auto-reconnect to {selected_port}...")
+                baudrate_str = self.baudrate_combobox.get()
+                baudrate = int(baudrate_str) if baudrate_str else 115200
+                self.serial.connect(selected_port, baudrate=baudrate)
+                self.serial_connect_toggle_button_update()
+                print(f"Auto-reconnected to {selected_port}")
+                self._reconnect_attempts = 0
+            except Exception as e:
+                self._reconnect_attempts += 1
+                print(f"Auto-reconnect failed (attempt {self._reconnect_attempts}): {e}")
+                if self._reconnect_attempts < 5:
+                    self.root.after(100, self.attempt_reconnect)
+                else:
+                    print(f"Auto-reconnect failed after 5 attempts. Manual reconnection required.")
+                    self._reconnect_attempts = 0
 
     def serial_connect_toggle_button_update(self) -> None:
         display_text = "Disconnect" if self.serial.is_connected() else "Connect"
         self.serial_connect_toggle_button.configure(text=display_text)
+        
+        # Disable/enable COM port and baudrate selection based on connection state
+        is_connected = self.serial.is_connected()
+        self.port_selection_combobox.configure(state="disabled" if is_connected else "readonly")
+        self.baudrate_combobox.configure(state="disabled" if is_connected else "normal")
 
     def serial_connect_toggle(self) -> None:
         # If already connected, disconnect
         if self.serial.is_connected():
             self.serial.disconnect()
+            self._reconnect_enabled = False  # Disable auto-reconnect on manual disconnect
             self.serial_connect_toggle_button_update()
+            print("Auto-reconnect disabled (manual disconnect)")
             return
 
         # Otherwise, try to connect
@@ -278,7 +271,10 @@ class SerialPlotterApp:
             baudrate = int(baudrate_str) if baudrate_str else 115200
             
             self.serial.connect(self.port_selection_combobox.get(), baudrate=baudrate)
+            self._reconnect_enabled = True  # Enable auto-reconnect on successful manual connect
+            self._reconnect_attempts = 0  # Reset attempt counter
             self.serial_connect_toggle_button_update()
+            print("Auto-reconnect enabled")
 
         except ValueError:
             self.terminal_show_message(
@@ -289,67 +285,22 @@ class SerialPlotterApp:
                 f"Could not open port [{self.port_selection_combobox.get()}]: {e}"
             )
 
-    def save_csv(self) -> None:
-        # Create directory if it doesn't exist
-        os.makedirs(
-            f"{SAVEDATA_FOLDER_PATH}/{self.gesture_selected_combobox.get()}",
-            exist_ok=True,
-        )
-        # Create a filename with the current datetime
-        filename = f"{SAVEDATA_FOLDER_PATH}/{self.gesture_selected_combobox.get()}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-
-        # Open the file for writing
-        with open(filename, mode="w", newline="") as file:
-            writer = csv.writer(file)
-            # Write the header
-            writer.writerow(["Time", "aX", "aY", "aZ", "gX", "gY", "gZ"])
-
-            # Write the data
-            total_samples: int = len(self.accelerometer_figure.timestamp)
-            for i in range(total_samples):
-                writer.writerow(
-                    [
-                        self.accelerometer_figure.timestamp[
-                            i
-                        ],  # It is save to use timestamp from one graph only
-                        self.accelerometer_figure.data_series["x-axis"][i],
-                        self.accelerometer_figure.data_series["y-axis"][i],
-                        self.accelerometer_figure.data_series["z-axis"][i],
-                        self.gyroscope_figure.data_series["x-axis"][i],
-                        self.gyroscope_figure.data_series["y-axis"][i],
-                        self.gyroscope_figure.data_series["z-axis"][i],
-                    ]
-                )
-        self.terminal_show_message(f"Data saved to {filename}, {total_samples} samples")
-
     def imu_data_toggle(self) -> None:
         self.show_imu_data = not self.show_imu_data
         display_text = "Hide IMU data" if self.show_imu_data else "Show IMU data"
         self.imu_data_toggle_button.configure(text=display_text)
 
-    def model_result_toggle(self) -> None:
-        self.show_model_result = not self.show_model_result
-        display_text = (
-            "Hide model result" if self.show_model_result else "Show model result"
-        )
-        self.model_result_toggle_button.configure(text=display_text)
-
     def update_terminal(self, reading: str) -> None:
         is_imu_data: bool = bool(
-            re.search(SERIAL_IMU_DATA_REGEX, reading)
-            or re.search(SERIAL_IMU_BNO05_DATA_REGEX, reading)
+            re.search(SERIAL_IMU_BNO085_DATA_REGEX, reading)
         )
         if is_imu_data and not self.show_imu_data:
-            return
-
-        is_model_result: bool = reading.startswith("[Res]")
-        if is_model_result and not self.show_model_result:
             return
 
         self.terminal.write(reading + "\n")
 
     def update_graphs(self, reading: str) -> None:
-        match = re.search(SERIAL_IMU_BNO05_DATA_REGEX, reading)
+        match = re.search(SERIAL_IMU_BNO085_DATA_REGEX, reading)
         if match:
             groups = match.groups()
 
@@ -401,7 +352,7 @@ class SerialPlotterApp:
             return
         
         if not self.serial.is_connected():
-            self.terminal_show_message("Error: Serial port is not connected")
+            self.terminal_show_message(f"{ANSI.bRed}Error: Serial port is not connected{ANSI.default}")
             return
         
         # Append newline if not already present
@@ -412,7 +363,7 @@ class SerialPlotterApp:
         if success:
             self.terminal_show_message(f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}")
         else:
-            self.terminal_show_message(f"{ANSI.bRed}Failed to send command{ANSI.default}")
+            self.terminal_show_message(f"{ANSI.bRed}Error: Failed to send command{ANSI.default}")
         
         # Keep textfield populated but select all text for quick resend
         self.send_command_entry.select_range(0, tk.END)
@@ -445,248 +396,10 @@ class SerialPlotterApp:
         print(message)
 
 
-class GestureData:
-    name_label: tk.Label
-    counts_label: tk.Label
-    selected_label: tk.Label
-    selected_samples_label: tk.Label
-    selected_combobox: tkAutocompleteCombobox
-    accelerometer_figure: tkPlotGraph
-    gyroscope_figure: tkPlotGraph
-    selected_file: Optional[str] = None
-
-
-class DataViewerApp:
-
-    def __init__(self, root: tk.Misc) -> None:
-        self.root: tk.Misc = root
-        self.killed: bool = False
-        self.stop_event = threading.Event()
-        self.gestures: dict[str, GestureData] = {}
-        self.ROW_OFFSET: int = 4
-
-        self.setup_ui()
-        self.populate_tables()
-
-        self.update_thread = threading.Thread(target=self.update)
-        self.update_thread.daemon = True
-        self.update_thread.start()
-
-    def update(self) -> None:
-        # while not self.killed:
-            # sleep(THREAD_DATA_VIEWER_UPDATE_INTERVAL)
-        while not self.stop_event.is_set():
-            #self.stop_event.wait(THREAD_DATA_VIEWER_UPDATE_INTERVAL)
-            # wait returns True immediately if stop_event was set, otherwise sleeps the interval
-            if self.stop_event.wait(THREAD_DATA_VIEWER_UPDATE_INTERVAL):
-                break
-
-            # Stop requested? double-check before doing potentially-long work
-            if self.stop_event.is_set():
-                break
-
-            self.update_contents()
-
-            # If new gesture is added, re-populate tables
-            if len(self.gestures) != len(get_gestures()):
-                self.populate_tables()
-
-    def update_contents(self) -> None:
-        for gesture in self.gestures:
-            # Try to load all files in ./{savedata}/{gesture}/[files]
-            self.gestures[gesture].selected_combobox.set_completion_list(
-                self.get_gesture_files(gesture)
-            )
-            self.update_content(gesture)
-
-    def setup_ui(self) -> None:
-        # Create a canvas and a scrollbar
-        self.canvas = tk.Canvas(self.root)
-        self.scrollbar = tk.Scrollbar(
-            self.root, orient="vertical", command=self.canvas.yview
-        )
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        self.scrollbar.grid(row=0, column=1, sticky="ns")
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-
-        # Create a frame inside the canvas
-        self.frame = tk.Frame(self.canvas)
-        self.canvas.create_window((0, 0), window=self.frame, anchor="nw")
-
-        # Configure the grid to expand
-        self.root.grid_rowconfigure(0, weight=1)
-        self.root.grid_columnconfigure(0, weight=1)
-
-        # Update the scroll region
-        self.frame.bind("<Configure>", self.on_frame_configure)
-
-    def close(self):
-        self.killed = True
-        self.stop_event.set()
-
-        self.update_thread.join(timeout=1)
-        if self.update_thread.is_alive():
-            print("update_thread did not exit in time")
-
-    def populate_tables(self) -> None:
-        # Cleanup whatever is left off
-        for gesture in self.gestures:
-            if self.gestures[gesture].accelerometer_figure:
-                self.gestures[gesture].accelerometer_figure.close()
-            if self.gestures[gesture].gyroscope_figure:
-                self.gestures[gesture].gyroscope_figure.close()
-        self.gestures.clear()
-
-        # Make new
-        gestures = get_gestures()
-        for gesture in gestures:
-            self.gestures[gesture] = GestureData()
-            self.populate_table(gesture)
-
-    def populate_table(self, gesture: str) -> None:
-        index = list(self.gestures.keys()).index(gesture)
-        print(f"{index = }, {gesture = }")
-
-        # The name of the gesture, aka folder name
-        self.gestures[gesture].name_label = tk.Label(self.frame, text=gesture)
-        self.gestures[gesture].name_label.grid(
-            row=index * self.ROW_OFFSET, column=0, sticky="nsew"
-        )
-
-        # The total number of samples files in the folder
-        self.gestures[gesture].counts_label = tk.Label(self.frame)
-        self.gestures[gesture].counts_label.grid(
-            row=index * self.ROW_OFFSET, column=1, sticky="nsew"
-        )
-
-        # Label for the selection combo box
-        self.gestures[gesture].selected_label = tk.Label(self.frame, text="Selected: ")
-        self.gestures[gesture].selected_label.grid(
-            row=index * self.ROW_OFFSET + 1, column=0, sticky="nsew"
-        )
-
-        # Combobox for selecting one of the sample file to view
-        self.gestures[gesture].selected_combobox = tkAutocompleteCombobox(
-            self.frame, state="readonly"
-        )
-        self.gestures[gesture].selected_combobox.grid(
-            row=index * self.ROW_OFFSET + 1, column=1
-        )
-
-        # Create figure to draw gyroscope data
-        self.gestures[gesture].accelerometer_figure = tkPlotGraph(
-            master=self.frame, title="Acceleration (G)"
-        )
-        self.gestures[gesture].accelerometer_figure.grid(
-            row=index * self.ROW_OFFSET, column=2, rowspan=self.ROW_OFFSET
-        )
-        self.gestures[gesture].accelerometer_figure.set_ylim(
-            -GRAPH_ACCEL_Y_LIMIT, GRAPH_ACCEL_Y_LIMIT
-        )
-
-        # Create figure to draw gyroscope data
-        self.gestures[gesture].gyroscope_figure = tkPlotGraph(
-            master=self.frame, title="Angular Velocity (DPS)"
-        )
-        self.gestures[gesture].gyroscope_figure.grid(
-            row=index * self.ROW_OFFSET, column=3, rowspan=self.ROW_OFFSET
-        )
-        self.gestures[gesture].gyroscope_figure.set_ylim(
-            -GRAPH_GYRO_Y_LIMIT, GRAPH_GYRO_Y_LIMIT
-        )
-
-        # How many sample points are there for this data
-        self.gestures[gesture].selected_samples_label = tk.Label(self.frame)
-        self.gestures[gesture].selected_samples_label.grid(
-            row=index * self.ROW_OFFSET + 2, column=1, sticky="nsew"
-        )
-
-        # Draw graphs with the default selected sample
-        selected_gesture_sample = self.gestures[gesture].selected_combobox.get()
-        self.load_graph_data(gesture, selected_gesture_sample)
-
-    def update_content(self, gesture: str) -> None:
-        # Count the number of samples in one gesture
-        self.gestures[gesture].counts_label.configure(
-            text=f"{len(self.gestures[gesture].selected_combobox.get_completion_list())} item"
-        )
-
-        # Get the selected file
-        selected_gesture_sample = self.gestures[gesture].selected_combobox.get()
-
-        # Skip of nothing is selected or the selection has not changed
-        if (
-            not selected_gesture_sample
-            or self.gestures[gesture].selected_file == selected_gesture_sample
-        ):
-            return
-
-        # Update selection and draw the updated sample data
-        self.gestures[gesture].selected_file = selected_gesture_sample
-        self.load_graph_data(gesture, selected_gesture_sample)
-
-    def load_graph_data(self, gesture: str, file_name: str) -> None:
-        # Skip if it is not a valid file
-        if not file_name:
-            return
-
-        # load data to DataFrame
-        df = pd.read_csv(f"{SAVEDATA_FOLDER_PATH}/{gesture}/{file_name}")
-
-        # Clear figure for reuse
-        self.gestures[gesture].accelerometer_figure.clear()
-        self.gestures[gesture].gyroscope_figure.clear()
-
-        # Load data to plot
-        for _, row in df.iterrows():
-            accelerometer_data = {
-                "x-axis": float(row["aX"]),
-                "y-axis": float(row["aY"]),
-                "z-axis": float(row["aZ"]),
-            }
-            self.gestures[gesture].accelerometer_figure.append_dict(
-                row["Time"], accelerometer_data
-            )
-
-            gyroscope_data = {
-                "x-axis": float(row["gX"]),
-                "y-axis": float(row["gY"]),
-                "z-axis": float(row["gZ"]),
-            }
-            self.gestures[gesture].gyroscope_figure.append_dict(
-                row["Time"], gyroscope_data
-            )
-
-        self.gestures[gesture].accelerometer_figure.draw()
-        self.gestures[gesture].gyroscope_figure.draw()
-
-        # Show the number of samples for this graph
-        self.gestures[gesture].selected_samples_label.configure(
-            text=f"{len(df)} samples"
-        )
-
-    # Returns a list of files names that is inside the [gesture] folder
-    @staticmethod
-    def get_gesture_files(gesture: str) -> list[str]:
-        folder_path = f"{SAVEDATA_FOLDER_PATH}/{gesture}"
-        if not os.path.exists(folder_path) or not os.listdir(folder_path):
-            return []
-        else:
-            return [
-                name
-                for name in os.listdir(folder_path)
-                if os.path.isfile(os.path.join(folder_path, name))
-            ]
-
-    def on_frame_configure(self, event=None):
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
 
 def on_closing():
     print("Exiting")
     serial_app.close()
-    viewer_app.close()
     root.quit()  # This will exit the main loop
     root.destroy()
 
@@ -695,17 +408,8 @@ if __name__ == "__main__":
 
     root = tk.Tk()
     root.title("IMU Plotter")
-    root.geometry("1280x720")
+    root.geometry("1000x720")
 
-    tabControl = ttk.Notebook(root)
-    tab1 = ttk.Frame(tabControl)
-    tab2 = ttk.Frame(tabControl)
-
-    tabControl.add(tab1, text="Serial Reader")
-    tabControl.add(tab2, text="Data Viewer")
-    tabControl.pack(expand=1, fill="both")
-
-    serial_app = SerialPlotterApp(tab1)
-    viewer_app = DataViewerApp(tab2)
+    serial_app = SerialPlotterApp(root)
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
