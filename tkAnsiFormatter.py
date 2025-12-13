@@ -106,6 +106,45 @@ class tkAnsiFormatter:
             self.text.tag_configure(bg_tag_dark, background=col_dark, foreground=contrast_text_dark)
             self.text.tag_configure(bg_tag_light, background=col_light, foreground=contrast_text_light)
 
+        # Configure a high-priority selection tag that overlays ANSI colors
+        self.text.tag_configure(
+            "select_overlay",
+            background="#0078D4",
+            foreground="#FFFFFF",
+            overstrike=False,
+        )
+        # Make select_overlay have highest priority
+        self.text.tag_raise("select_overlay")
+        
+        # Bind mouse events to handle selection with overlay
+        self.text.bind("<Button-1>", self._on_select_start)
+        self.text.bind("<B1-Motion>", self._on_select_motion)
+        self.text.bind("<ButtonRelease-1>", self._on_select_end)
+
+    def _on_select_start(self, event: object) -> None:
+        """Handle selection start."""
+        self.text.tag_remove("select_overlay", "1.0", "end")
+
+    def _on_select_motion(self, event: object) -> None:
+        """Handle selection motion - update overlay."""
+        try:
+            sel_start = self.text.index("sel.first")
+            sel_end = self.text.index("sel.last")
+            self.text.tag_remove("select_overlay", "1.0", "end")
+            self.text.tag_add("select_overlay", sel_start, sel_end)
+        except tk.TclError:
+            pass
+
+    def _on_select_end(self, event: object) -> None:
+        """Handle selection end - finalize overlay."""
+        try:
+            sel_start = self.text.index("sel.first")
+            sel_end = self.text.index("sel.last")
+            self.text.tag_remove("select_overlay", "1.0", "end")
+            self.text.tag_add("select_overlay", sel_start, sel_end)
+        except tk.TclError:
+            pass
+
     def insert_ansi(self, txt: str, index: str = "insert") -> None:
         first_line, first_char = map(int, str(self.text.index(index)).split("."))
 
