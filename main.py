@@ -1137,13 +1137,14 @@ class LightControlApp:
     # GPIO options from GPIO0-GPIO21 and GPIO26-GPIO48
     GPIO_OPTIONS: list[str] = [f"GPIO{i}" for i in range(22)] + [f"GPIO{i}" for i in range(26, 49)]
     FREQUENCY_OPTIONS: list[str] = ["50Hz", "60Hz", "100Hz", "120Hz", "440Hz", "1000Hz", "10000Hz", "44100Hz", "48000Hz", "96000Hz"]
+    GAMMA_OPTIONS: list[str] = [f"{i:.1f}" for i in [round(x * 0.1, 1) for x in range(10, 31)]]  # 1.0 to 3.0 in 0.1 steps
     GAMMA: float = 2.3  # Gamma correction value (2.3 for non-linear brightness)
 
     def __init__(self, parent: SerialPlotterApp) -> None:
         self.parent: SerialPlotterApp = parent
         self.window: tk.Toplevel = tk.Toplevel(parent.master)
         self.window.title("Light Control")
-        self.window.geometry("600x170")
+        self.window.geometry("750x170")
         
         # Handle window close to hide instead of destroy
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
@@ -1152,6 +1153,7 @@ class LightControlApp:
         self.light_initialized: bool = False
         self.light_power_pending: float | None = None
         self.light_power_send_scheduled: bool = False
+        self.current_gamma: float = 2.3  # Store current gamma value
         
         # Create main frame
         main_frame: tk.Frame = tk.Frame(master=self.window)
@@ -1202,6 +1204,23 @@ class LightControlApp:
         )
         self.frequency_combobox.set("44100Hz")
         self.frequency_combobox.pack(side=tk.LEFT, padx=2)
+        
+        # Gamma frame (right of frequency)
+        gamma_frame: tk.Frame = tk.Frame(master=config_frame)
+        gamma_frame.pack(side=tk.LEFT, padx=5)
+        
+        gamma_label: tk.Label = tk.Label(master=gamma_frame, text="Gamma:", anchor="w")
+        gamma_label.pack(side=tk.LEFT, padx=2)
+        
+        self.gamma_combobox: ttk.Combobox = ttk.Combobox(
+            master=gamma_frame,
+            values=self.GAMMA_OPTIONS,
+            state="readonly",
+            width=8,
+        )
+        self.gamma_combobox.set("2.3")
+        self.gamma_combobox.pack(side=tk.LEFT, padx=2)
+        self.gamma_combobox.bind("<<ComboboxSelected>>", self.on_gamma_changed)
         
         # Init and Deinit buttons on right
         button_frame: tk.Frame = tk.Frame(master=config_frame)
@@ -1273,9 +1292,22 @@ class LightControlApp:
     def _level_to_pwm(self, level: int) -> int:
         """Convert power level (0-7) to PWM value (0-256) using gamma correction."""
         normalized = level / 7.0  # Normalize to 0-1
-        gamma_corrected = pow(normalized, self.GAMMA)  # Apply gamma correction (gamma = 1/2.2)
+        gamma_corrected = pow(normalized, self.current_gamma)  # Apply gamma correction with current gamma
         pwm_value = int(gamma_corrected * 256)
         return min(pwm_value, 256)  # Ensure we don't exceed 256
+
+    def on_gamma_changed(self, event: tk.Event | None = None) -> None:
+        """Handle gamma value change."""
+        try:
+            gamma_str = self.gamma_combobox.get()
+            self.current_gamma = float(gamma_str)
+            # Re-calculate power display with new gamma value
+            if self.light_initialized:
+                level = int(self.power_slider.get())
+                pwm_value = self._level_to_pwm(level)
+                self.power_value_label.config(text=f"{pwm_value}/256")
+        except ValueError:
+            print("Invalid gamma value")
 
     def _on_power_slider_changed(self, level: int) -> None:
         """Handle power slider change with throttling."""
