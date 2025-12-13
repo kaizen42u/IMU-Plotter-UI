@@ -685,6 +685,13 @@ class ESCControlApp:
             cali_command = f"esc {esc_id} cali {calib_values[0]} {calib_values[1]} {calib_values[2]} {calib_values[3]} {calib_values[4]}"
             self.parent.master.after(command_delay, lambda cmd=cali_command: self._send_command_to_serial(cmd))
             command_delay += 200
+            
+            # Send power test sequence: 0.00, -0.01, 0.00, 0.01, 0.00
+            power_sequence = [0.00, -0.01, 0.00, 0.01, 0.00]
+            for power_val in power_sequence:
+                pw_command = f"esc {esc_id} pw {power_val:.2f}"
+                self.parent.master.after(command_delay, lambda cmd=pw_command: self._send_command_to_serial(cmd))
+                command_delay += 750
 
     def _send_init_command(self, command: str, index: int) -> None:
         """Send init command and mark ESC as initialized."""
