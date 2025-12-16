@@ -306,8 +306,9 @@ class SerialPlotterApp:
         self.serial.close()
 
     def serial_line_received(self, line: str) -> None:
-        self.update_graphs(line)
-        self.update_terminal(line)
+        # Schedule GUI updates on the main thread to avoid race conditions
+        self.master.after(0, self.update_graphs, line)
+        self.master.after(0, self.update_terminal, line)
 
         # Log asynchronously to not block graph/terminal updates
         if self.logging_enabled:
