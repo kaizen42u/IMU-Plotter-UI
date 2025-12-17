@@ -1337,11 +1337,9 @@ class LightControlApp:
 
     def _send_pending_power(self) -> None:
         """Send the latest pending power value for the light."""
-        if self.light_power_pending is not None and self.gpio_combobox is not None:
+        if self.light_power_pending is not None:
             pwm_value = self.light_power_pending
-            gpio_str: str = self.gpio_combobox.get()
-            gpio_num = int(gpio_str.replace("GPIO", ""))
-            command = f"ledc {gpio_num} set {pwm_value}"
+            command = f"light set {pwm_value}"
             threading.Thread(
                 target=self._send_command_to_serial,
                 args=(command,),
@@ -1388,13 +1386,13 @@ class LightControlApp:
         # Extract frequency number from string (e.g., "44100Hz" -> "44100")
         freq_num = freq_str.replace("Hz", "")
         
-        # Send config command first: ledc config [Hz]
-        config_command = f"ledc config {freq_num}"
+        # Send config command: light config <gpio> <freq_hz>
+        config_command = f"light config {gpio_num} {freq_num}"
         self.parent.master.after(0, lambda cmd=config_command: self._send_command_to_serial(cmd))
         
-        # Send init command: ledc [gpio] init 0
-        init_command = f"ledc {gpio_num} init 0"
-        self.parent.master.after(200, lambda cmd=init_command: self._send_command_to_serial(cmd))
+        # Send freq command: light freq <freq_hz>
+        freq_command = f"light freq {freq_num}"
+        self.parent.master.after(200, lambda cmd=freq_command: self._send_command_to_serial(cmd))
         
         self.light_initialized = True
         self.parent.master.after(400, self.update_light_config_state)
@@ -1402,30 +1400,19 @@ class LightControlApp:
 
     def deinit_light(self) -> None:
         """Send deinit command for the light."""
-        if self.gpio_combobox is None:
-            print("Error: GPIO combobox is not initialized")
-            return
-        
-        gpio_str: str = self.gpio_combobox.get()
-        gpio_num = int(gpio_str.replace("GPIO", ""))
-        
-        # Send set 0 command first: ledc [gpio] set 0
-        set_zero_command = f"ledc {gpio_num} set 0"
+        # Send set 0 command first: light set 0
+        set_zero_command = "light set 0"
         self.parent.master.after(0, lambda cmd=set_zero_command: self._send_command_to_serial(cmd))
         
-        # Send deinit command: ledc [gpio] deinit
-        deinit_command = f"ledc {gpio_num} deinit"
-        self.parent.master.after(200, lambda cmd=deinit_command: self._send_command_to_serial(cmd))
-        
-        # Send delete command: ledc delete
-        delete_command = "ledc delete"
-        self.parent.master.after(400, lambda cmd=delete_command: self._send_command_to_serial(cmd))
+        # Send delete command: light delete
+        delete_command = "light delete"
+        self.parent.master.after(200, lambda cmd=delete_command: self._send_command_to_serial(cmd))
         
         self.light_initialized = False
         # Reset power slider to 0.00 before unlocking it
         self.power_slider.set(0)
-        self.parent.master.after(600, self.update_light_config_state)
-        self.parent.master.after(600, self.update_light_controls_state)
+        self.parent.master.after(400, self.update_light_config_state)
+        self.parent.master.after(400, self.update_light_controls_state)
 
     def update_light_config_state(self) -> None:
         """Update UI state based on initialization status."""
