@@ -765,6 +765,16 @@ class ESCControlApp:
             else:
                 calib_values = self.DEFAULT_ESC_CONFIG[index]["calibration"]
 
+            # Send frequency command: esc freq <freq>
+            freq_str: str = self.frequency_combobox.get()
+            # Extract frequency number from string (e.g., "50Hz" -> "50")
+            freq_num = freq_str.replace("Hz", "")
+            freq_command = f"esc freq {freq_num}"
+            self.parent.master.after(
+                command_delay, lambda cmd=freq_command: self._send_command_to_serial(cmd)
+            )
+            command_delay += 200
+
             # Send init command: esc <id> init <gpio_num>
             init_command = f"esc {esc_id} init {gpio_num}"
             self.parent.master.after(
