@@ -1,6 +1,7 @@
 {
     "python.analysis.typeCheckingMode": "basic",
     "cSpell.words": [
+        "activebackground",
         "argmax",
         "autoscale",
         "autoscroll",
@@ -18,6 +19,7 @@
         "dateutil",
         "deinit",
         "deinitialized",
+        "dodgerblue",
         "escs",
         "figsize",
         "fonttools",
@@ -27,6 +29,8 @@
         "keysym",
         "kiwisolver",
         "ledc",
+        "lightcoral",
+        "lightyellow",
         "linestyle",
         "linewidth",
         "matplotlib",

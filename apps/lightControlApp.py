@@ -23,7 +23,6 @@ class LightControlApp:
         self.parent = parent
         self.window: tk.Toplevel = tk.Toplevel(parent.master)
         self.window.title("Light Control")
-        self.window.geometry("750x170")
         
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
         
@@ -32,10 +31,26 @@ class LightControlApp:
         self.light_power_send_scheduled: bool = False
         self.current_gamma: float = 2.3
         
+        # Background thread for power level monitoring
+        self.power_monitor_thread: threading.Thread | None = None
+        self.power_monitor_active: bool = True
+        self.current_power_level: int = 0
+        self.last_sent_power_level: int = -1
+        self.power_lock = threading.Lock()
+        
         main_frame: tk.Frame = tk.Frame(master=self.window)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         self._create_light_section(main_frame)
+        
+        # Auto-size window to fit content
+        self.window.update_idletasks()
+        width = main_frame.winfo_reqwidth() + 20
+        height = main_frame.winfo_reqheight() + 20
+        self.window.geometry(f"{width}x{height}")
+        
+        # Start background power monitor thread
+        self._start_power_monitor_thread()
         
         self.update_connection_state()
 
@@ -181,16 +196,14 @@ class LightControlApp:
             print("Invalid gamma value")
 
     def _on_power_slider_changed(self, level: int) -> None:
-        """Handle power slider change with throttling."""
+        """Handle power slider change - update the monitor thread."""
         pwm_value = self._level_to_pwm(level)
         
         self.power_value_label.config(text=f"{pwm_value}/256")
         
-        self.light_power_pending = pwm_value
-        
-        if not self.light_power_send_scheduled:
-            self.light_power_send_scheduled = True
-            self.parent.master.after(75, self._send_pending_power)
+        # Update the power level for the background monitor thread
+        with self.power_lock:
+            self.current_power_level = level
 
     def _send_pending_power(self) -> None:
         """Send the latest pending power value for the light."""
@@ -269,6 +282,57 @@ class LightControlApp:
         self.frequency_combobox.config(state="disabled" if self.light_initialized else "readonly")
         self.power_slider.config(state="normal" if self.light_initialized else "disabled")
 
+    def increase_power(self) -> None:
+        """Increase power level by one tick (only if initialized)."""
+        if self.light_initialized:
+            with self.power_lock:
+                if self.current_power_level < 7:
+                    self.current_power_level += 1
+                    # Update UI
+                    pwm_value = self._level_to_pwm(self.current_power_level)
+                    self.power_value_label.config(text=f"{pwm_value}/256")
+                    self.power_slider.set(self.current_power_level)
+
+    def decrease_power(self) -> None:
+        """Decrease power level by one tick (only if initialized)."""
+        if self.light_initialized:
+            with self.power_lock:
+                if self.current_power_level > 0:
+                    self.current_power_level -= 1
+                    # Update UI
+                    pwm_value = self._level_to_pwm(self.current_power_level)
+                    self.power_value_label.config(text=f"{pwm_value}/256")
+                    self.power_slider.set(self.current_power_level)
+
+    def _start_power_monitor_thread(self) -> None:
+        """Start the background thread that monitors and sends power level changes."""
+        self.power_monitor_thread = threading.Thread(target=self._power_monitor_loop, daemon=True)
+        self.power_monitor_thread.start()
+
+    def _power_monitor_loop(self) -> None:
+        """Background thread loop that monitors power level changes and sends commands."""
+        import time
+        
+        while self.power_monitor_active:
+            try:
+                with self.power_lock:
+                    current_level = self.current_power_level
+                    last_sent = self.last_sent_power_level
+                
+                # Send command if power level changed and light is initialized
+                if current_level != last_sent and self.light_initialized:
+                    pwm_value = self._level_to_pwm(current_level)
+                    command = f"light set {pwm_value}"
+                    self._send_command(command)
+                    
+                    with self.power_lock:
+                        self.last_sent_power_level = current_level
+                
+                # Small sleep to avoid busy waiting
+                time.sleep(0.05)
+            except Exception as e:
+                print(f"Error in power monitor thread: {e}")
+
     def update_connection_state(self) -> None:
         """Update button state based on serial connection and initialization."""
         is_connected = self.parent.serial.is_connected()
@@ -282,4 +346,8 @@ class LightControlApp:
 
     def on_window_close(self) -> None:
         """Hide window instead of closing it."""
+        # Stop the background monitor thread when window closes
+        self.power_monitor_active = False
+        if self.power_monitor_thread is not None:
+            self.power_monitor_thread.join(timeout=1)
         self.window.withdraw()

@@ -42,7 +42,6 @@ class ESCControlApp:
         self.parent = parent
         self.window: tk.Toplevel = tk.Toplevel(parent.master)
         self.window.title("ESC Control")
-        self.window.geometry("700x820")
         
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
         
@@ -70,6 +69,12 @@ class ESCControlApp:
         
         for esc_id in range(1, 5):
             self._create_esc_section(main_frame, esc_id - 1, esc_id)
+        
+        # Auto-size window to fit content
+        self.window.update_idletasks()
+        width = main_frame.winfo_reqwidth() + 20
+        height = main_frame.winfo_reqheight() + 20
+        self.window.geometry(f"{width}x{height}")
 
     def _create_common_section(self, parent: tk.Frame) -> None:
         """Create a common settings section for all ESCs."""
