@@ -94,8 +94,28 @@ class ESCControlApp:
         self.esc_last_sent_power_levels: list[float] = [-1.0] * self.num_escs
         self.esc_power_lock = threading.Lock()
         
-        main_frame: tk.Frame = tk.Frame(master=self.window)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Create canvas with scrollbar for scrollable content
+        canvas = tk.Canvas(master=self.window, bg="white")
+        scrollbar = tk.Scrollbar(master=self.window, orient=tk.VERTICAL, command=canvas.yview)
+        
+        main_frame: tk.Frame = tk.Frame(master=canvas)
+        main_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=main_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack canvas and scrollbar
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Bind mousewheel scrolling
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
         
         self._create_common_section(main_frame)
         
@@ -104,8 +124,8 @@ class ESCControlApp:
         
         # Auto-size window to fit content
         self.window.update_idletasks()
-        width = main_frame.winfo_reqwidth() + 20
-        height = main_frame.winfo_reqheight() + 20
+        width = min(main_frame.winfo_reqwidth() + 40, 900)  # Cap width at 900px
+        height = min(main_frame.winfo_reqheight() + 40, 700)  # Cap height at 700px
         self.window.geometry(f"{width}x{height}")
         
         # Start background power monitor thread
@@ -515,7 +535,7 @@ class ESCControlApp:
             state="readonly",
             width=12,
         )
-        gpio_combobox.set(self.esc_configs[index].get("gpio", self.DEFAULT_ESC_CONFIG[index]["gpio"]))
+        gpio_combobox.set(self.esc_configs[index].get("gpio", f"GPIO{9 + index}"))
         gpio_combobox.pack(side=tk.LEFT, padx=2)
         
         direction_frame: tk.Frame = tk.Frame(master=config_frame)
@@ -532,7 +552,7 @@ class ESCControlApp:
             state="readonly",
             width=12,
         )
-        direction_combobox.set(self.esc_configs[index].get("direction", self.DEFAULT_ESC_CONFIG[index]["direction"]))
+        direction_combobox.set(self.esc_configs[index].get("direction", "Normal"))
         direction_combobox.pack(side=tk.LEFT, padx=2)
         
         toggle_checkbox: tk.Checkbutton = tk.Checkbutton(
@@ -560,7 +580,7 @@ class ESCControlApp:
         
         calib_entries: list[tk.Entry] = []
         calib_labels: list[str] = ["BW Max", "BW Min", "Idle", "FW Min", "FW Max"]
-        default_calib: list[int] = self.esc_configs[index].get("calibration", self.DEFAULT_ESC_CONFIG[index]["calibration"])  # type: ignore
+        default_calib: list[int] = self.esc_configs[index].get("calibration", [1000, 1500, 1500, 1500, 2000])  # type: ignore
         
         for i, calib_label_text in enumerate(calib_labels):
             label = tk.Label(
