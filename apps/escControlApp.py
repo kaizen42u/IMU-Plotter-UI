@@ -62,6 +62,13 @@ class ESCControlApp:
         self.esc_power_pending: list[float | None] = [None] * 4
         self.esc_power_send_scheduled: list[bool] = [False] * 4
         
+        # Background thread for ESC power level monitoring
+        self.esc_power_monitor_thread: threading.Thread | None = None
+        self.esc_power_monitor_active: bool = True
+        self.esc_current_power_levels: list[float] = [0.0] * 4
+        self.esc_last_sent_power_levels: list[float] = [-1.0] * 4
+        self.esc_power_lock = threading.Lock()
+        
         main_frame: tk.Frame = tk.Frame(master=self.window)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
@@ -75,6 +82,9 @@ class ESCControlApp:
         width = main_frame.winfo_reqwidth() + 20
         height = main_frame.winfo_reqheight() + 20
         self.window.geometry(f"{width}x{height}")
+        
+        # Start background power monitor thread
+        self._start_power_monitor_thread()
 
     def _create_common_section(self, parent: tk.Frame) -> None:
         """Create a common settings section for all ESCs."""
@@ -130,6 +140,10 @@ class ESCControlApp:
 
     def on_window_close(self) -> None:
         """Hide window instead of closing it."""
+        # Stop the background monitor thread when window closes
+        self.esc_power_monitor_active = False
+        if self.esc_power_monitor_thread is not None:
+            self.esc_power_monitor_thread.join(timeout=1)
         self.window.withdraw()
 
     def init_escs(self) -> None:
@@ -309,7 +323,7 @@ class ESCControlApp:
             )
 
     def _on_power_slider_changed(self, index: int, slider_value: int) -> None:
-        """Handle power slider change with throttling."""
+        """Handle power slider change - update the monitor thread."""
         power: float = slider_value / 100.0
         
         if hasattr(self, "esc_power_value_labels") and index < len(
@@ -325,13 +339,9 @@ class ESCControlApp:
             else:
                 label.config(bg="#FFA500")
         
-        self.esc_power_pending[index] = power
-        
-        if not self.esc_power_send_scheduled[index]:
-            self.esc_power_send_scheduled[index] = True
-            self.parent.master.after(
-                75, lambda idx=index: self._send_pending_power(idx)
-            )
+        # Update the power level for the background monitor thread
+        with self.esc_power_lock:
+            self.esc_current_power_levels[index] = power
 
     def _send_pending_power(self, index: int) -> None:
         """Send the latest pending power value for an ESC."""
@@ -363,6 +373,49 @@ class ESCControlApp:
                 print("Serial port is not connected")
         except Exception as e:
             print(f"Error sending command: {e}")
+
+    def send_all_esc_power(self, power_levels: list[float]) -> None:
+        """Send power commands for all 4 ESCs (only if different from last sent values)."""
+        if len(power_levels) != 4:
+            print(f"Error: Expected 4 power levels, got {len(power_levels)}")
+            return
+        
+        with self.esc_power_lock:
+            for esc_index in range(4):
+                # Only send if power level changed and ESC is initialized
+                if power_levels[esc_index] != self.esc_last_sent_power_levels[esc_index] and self.esc_initialized[esc_index]:
+                    power = power_levels[esc_index]
+                    esc_id = esc_index + 1
+                    command = f"esc {esc_id} pw {power:.2f}"
+                    threading.Thread(
+                        target=self._send_command, args=(command,), daemon=True
+                    ).start()
+                    # Update both last_sent and current to keep them in sync
+                    self.esc_last_sent_power_levels[esc_index] = power
+                    self.esc_current_power_levels[esc_index] = power
+        
+        # Update UI sliders to reflect the new power levels
+        self._update_power_sliders()
+
+    def stop_all_escs(self) -> None:
+        """Stop all ESCs by setting power to 0.00."""
+        # Create stop command for all 4 ESCs
+        stop_levels = [0.0] * 4
+        self.send_all_esc_power(stop_levels)
+        self._update_power_sliders()
+
+    def _update_power_sliders(self) -> None:
+        """Update all power sliders to reflect current power levels."""
+        if hasattr(self, "esc_power_sliders") and self.window.winfo_exists():
+            with self.esc_power_lock:
+                # Make a copy to avoid holding lock during UI update
+                current_levels = self.esc_current_power_levels.copy()
+            
+            for index in range(4):
+                if index < len(self.esc_power_sliders):
+                    # Convert to slider scale (0-100)
+                    slider_value = int(current_levels[index] * 100)
+                    self.esc_power_sliders[index].set(slider_value)
 
     def _create_esc_section(self, parent: tk.Frame, index: int, esc_id: int) -> None:
         """Create a section for one ESC configuration."""
@@ -503,3 +556,33 @@ class ESCControlApp:
         
         self.esc_power_sliders.append(power_slider)
         self.esc_power_value_labels.append(power_value_label)
+    def _start_power_monitor_thread(self) -> None:
+        """Start the background thread that monitors and sends power level changes."""
+        self.esc_power_monitor_thread = threading.Thread(target=self._esc_power_monitor_loop, daemon=True)
+        self.esc_power_monitor_thread.start()
+
+    def _esc_power_monitor_loop(self) -> None:
+        """Background thread loop that monitors power level changes and sends commands."""
+        import time
+        
+        while self.esc_power_monitor_active:
+            try:
+                with self.esc_power_lock:
+                    current_levels = self.esc_current_power_levels.copy()
+                    last_sent_levels = self.esc_last_sent_power_levels.copy()
+                
+                # Send command for each ESC if power level changed and ESC is initialized
+                for esc_index in range(4):
+                    if current_levels[esc_index] != last_sent_levels[esc_index] and self.esc_initialized[esc_index]:
+                        power = current_levels[esc_index]
+                        esc_id = esc_index + 1
+                        command = f"esc {esc_id} pw {power:.2f}"
+                        self._send_command(command)
+                        
+                        with self.esc_power_lock:
+                            self.esc_last_sent_power_levels[esc_index] = power
+                
+                # Small sleep to avoid busy waiting
+                time.sleep(0.05)
+            except Exception as e:
+                print(f"Error in ESC power monitor thread: {e}")

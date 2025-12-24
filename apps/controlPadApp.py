@@ -5,14 +5,16 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .lightControlApp import LightControlApp
+    from .escControlApp import ESCControlApp
 
 
 class ControlPadApp:
     """Application for directional and rotational control pad."""
 
-    def __init__(self, parent, light_control_app: Optional["LightControlApp"] = None) -> None:
+    def __init__(self, parent, light_control_app: Optional["LightControlApp"] = None, esc_control_app: Optional["ESCControlApp"] = None) -> None:
         self.parent = parent
         self.light_control_app = light_control_app
+        self.esc_control_app = esc_control_app
         self.window: tk.Toplevel = tk.Toplevel(parent.master)
         self.window.title("Control Pad")
         
@@ -54,7 +56,8 @@ class ControlPadApp:
                     width=12,
                     height=4,
                     bg=button_colors['movement']['normal'],
-                    activebackground=button_colors['movement']['pressed']
+                    activebackground=button_colors['movement']['pressed'],
+                    command=self._esc_forward
                 )
                 forward_btn.grid(row=0, column=col, padx=2, pady=2)
             else:
@@ -68,7 +71,8 @@ class ControlPadApp:
             width=12,
             height=4,
             bg=button_colors['movement']['normal'],
-            activebackground=button_colors['movement']['pressed']
+            activebackground=button_colors['movement']['pressed'],
+            command=self._esc_left
         )
         left_btn.grid(row=1, column=0, padx=2, pady=2)
         
@@ -78,7 +82,8 @@ class ControlPadApp:
             width=12,
             height=4,
             bg=button_colors['stop']['normal'],
-            activebackground=button_colors['stop']['pressed']
+            activebackground=button_colors['stop']['pressed'],
+            command=self._stop_escs
         )
         stop_btn1.grid(row=1, column=1, padx=2, pady=2)
         
@@ -88,7 +93,8 @@ class ControlPadApp:
             width=12,
             height=4,
             bg=button_colors['movement']['normal'],
-            activebackground=button_colors['movement']['pressed']
+            activebackground=button_colors['movement']['pressed'],
+            command=self._esc_right
         )
         right_btn.grid(row=1, column=2, padx=2, pady=2)
         
@@ -102,7 +108,8 @@ class ControlPadApp:
                     width=12,
                     height=4,
                     bg=button_colors['movement']['normal'],
-                    activebackground=button_colors['movement']['pressed']
+                    activebackground=button_colors['movement']['pressed'],
+                    command=self._esc_backward
                 )
                 backward_btn.grid(row=2, column=col, padx=2, pady=2)
             else:
@@ -133,7 +140,8 @@ class ControlPadApp:
                     width=12,
                     height=4,
                     bg=button_colors['vertical']['normal'],
-                    activebackground=button_colors['vertical']['pressed']
+                    activebackground=button_colors['vertical']['pressed'],
+                    command=self._esc_up
                 )
                 up_btn.grid(row=0, column=col, padx=2, pady=2)
             else:
@@ -147,7 +155,8 @@ class ControlPadApp:
             width=12,
             height=4,
             bg=button_colors['rotation']['normal'],
-            activebackground=button_colors['rotation']['pressed']
+            activebackground=button_colors['rotation']['pressed'],
+            command=self._esc_roll_left
         )
         rotate_left_btn.grid(row=1, column=0, padx=2, pady=2)
         
@@ -157,7 +166,8 @@ class ControlPadApp:
             width=12,
             height=4,
             bg=button_colors['stop']['normal'],
-            activebackground=button_colors['stop']['pressed']
+            activebackground=button_colors['stop']['pressed'],
+            command=self._stop_escs
         )
         stop_btn2.grid(row=1, column=1, padx=2, pady=2)
         
@@ -167,7 +177,8 @@ class ControlPadApp:
             width=12,
             height=4,
             bg=button_colors['rotation']['normal'],
-            activebackground=button_colors['rotation']['pressed']
+            activebackground=button_colors['rotation']['pressed'],
+            command=self._esc_roll_right
         )
         rotate_right_btn.grid(row=1, column=2, padx=2, pady=2)
         
@@ -181,7 +192,8 @@ class ControlPadApp:
                     width=12,
                     height=4,
                     bg=button_colors['vertical']['normal'],
-                    activebackground=button_colors['vertical']['pressed']
+                    activebackground=button_colors['vertical']['pressed'],
+                    command=self._esc_down
                 )
                 down_btn.grid(row=2, column=col, padx=2, pady=2)
             else:
@@ -340,6 +352,10 @@ class ControlPadApp:
         """Update the reference to light control app."""
         self.light_control_app = light_control_app
 
+    def set_esc_control_app(self, esc_control_app: Optional["ESCControlApp"]) -> None:
+        """Update the reference to ESC control app."""
+        self.esc_control_app = esc_control_app
+
     def _increase_light(self) -> None:
         """Increase light power level."""
         if self.light_control_app:
@@ -349,6 +365,51 @@ class ControlPadApp:
         """Decrease light power level."""
         if self.light_control_app:
             self.light_control_app.decrease_power()
+
+    def _esc_forward(self) -> None:
+        """Forward: ESC1=-0.15, ESC2=0.15, ESC3=0, ESC4=0.10."""
+        if self.esc_control_app:
+            self.esc_control_app.send_all_esc_power([-0.15, 0.15, 0.0, 0.10])
+
+    def _esc_backward(self) -> None:
+        """Backward: ESC1=0.20, ESC2=-0.20, ESC3=0, ESC4=-0.15."""
+        if self.esc_control_app:
+            self.esc_control_app.send_all_esc_power([0.20, -0.20, 0.0, -0.15])
+
+    def _esc_left(self) -> None:
+        """Turn left: ESC1=0, ESC2=0, ESC3=-0.15, ESC4=-0.03."""
+        if self.esc_control_app:
+            self.esc_control_app.send_all_esc_power([0.0, 0.0, -0.15, -0.03])
+
+    def _esc_right(self) -> None:
+        """Turn right: ESC1=0, ESC2=0, ESC3=0.50, ESC4=-0.03."""
+        if self.esc_control_app:
+            self.esc_control_app.send_all_esc_power([0.0, 0.0, 0.50, -0.03])
+
+    def _esc_up(self) -> None:
+        """Up: ESC1=0.25, ESC2=0.25, ESC3=0, ESC4=0."""
+        if self.esc_control_app:
+            self.esc_control_app.send_all_esc_power([0.25, 0.25, 0.0, 0.0])
+
+    def _esc_down(self) -> None:
+        """Down: ESC1=-0.15, ESC2=-0.15, ESC3=0, ESC4=0."""
+        if self.esc_control_app:
+            self.esc_control_app.send_all_esc_power([-0.15, -0.15, 0.0, 0.0])
+
+    def _esc_roll_left(self) -> None:
+        """Roll left: ESC1=0.75, ESC2=-0.3, ESC3=0, ESC4=0."""
+        if self.esc_control_app:
+            self.esc_control_app.send_all_esc_power([0.75, -0.3, 0.0, 0.0])
+
+    def _esc_roll_right(self) -> None:
+        """Roll right: ESC1=-0.425, ESC2=0.6, ESC3=0, ESC4=0."""
+        if self.esc_control_app:
+            self.esc_control_app.send_all_esc_power([-0.425, 0.6, 0.0, 0.0])
+
+    def _stop_escs(self) -> None:
+        """Stop all ESCs by setting power to 0.00."""
+        if self.esc_control_app:
+            self.esc_control_app.stop_all_escs()
 
     def on_window_close(self) -> None:
         """Handle window close event."""

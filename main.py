@@ -31,11 +31,15 @@ def create_serial_wrapper(serial_terminal: SerialTerminal):
 
 def toggle_esc_control(serial_terminal: SerialTerminal):
     """Toggle ESC control window visibility."""
-    global esc_control_app
+    global esc_control_app, control_pad_app
     
     if esc_control_app is None or not esc_control_app.window.winfo_exists():
         wrapper = create_serial_wrapper(serial_terminal)
         esc_control_app = ESCControlApp(parent=wrapper)
+        
+        # Update control pad's reference to esc_control_app
+        if control_pad_app is not None:
+            control_pad_app.set_esc_control_app(esc_control_app)
         
         # Handle window close - just hide it instead of destroying
         def on_esc_window_close():
@@ -44,7 +48,10 @@ def toggle_esc_control(serial_terminal: SerialTerminal):
         
         esc_control_app.window.protocol("WM_DELETE_WINDOW", on_esc_window_close)
     else:
-        # Toggle visibility
+        # Toggle visibility - always update control pad reference
+        if control_pad_app is not None:
+            control_pad_app.set_esc_control_app(esc_control_app)
+        
         if esc_control_app.window.winfo_viewable():
             esc_control_app.window.withdraw()
         else:
@@ -84,11 +91,11 @@ def toggle_light_control(serial_terminal: SerialTerminal):
 
 def toggle_control_pad(serial_terminal: SerialTerminal):
     """Toggle control pad window visibility."""
-    global control_pad_app, light_control_app
+    global control_pad_app, light_control_app, esc_control_app
     
     if control_pad_app is None or not control_pad_app.window.winfo_exists():
         wrapper = create_serial_wrapper(serial_terminal)
-        control_pad_app = ControlPadApp(parent=wrapper, light_control_app=light_control_app)
+        control_pad_app = ControlPadApp(parent=wrapper, light_control_app=light_control_app, esc_control_app=esc_control_app)
         
         # Handle window close - just hide it instead of destroying
         def on_control_pad_window_close():
@@ -97,8 +104,9 @@ def toggle_control_pad(serial_terminal: SerialTerminal):
         
         control_pad_app.window.protocol("WM_DELETE_WINDOW", on_control_pad_window_close)
     else:
-        # Update reference in case light_control_app was created after control_pad
+        # Update references in case control apps were created after control_pad
         control_pad_app.set_light_control_app(light_control_app)
+        control_pad_app.set_esc_control_app(esc_control_app)
         # Toggle visibility
         if control_pad_app.window.winfo_viewable():
             control_pad_app.window.withdraw()
