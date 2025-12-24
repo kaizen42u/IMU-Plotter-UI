@@ -164,9 +164,20 @@ def update_control_apps_state():
 def on_closing(serial_terminal: SerialTerminal, imu_plotter, root: tk.Tk):
     """Handle application closing."""
     print("Exiting")
+    
+    # Save and close ESC control app if exists
+    if esc_control_app and esc_control_app.window.winfo_exists():
+        esc_control_app.on_window_close()
+    
+    # Save and close light control app if exists
+    if light_control_app and light_control_app.window.winfo_exists():
+        light_control_app.on_window_close()
+    
+    # Close other apps
     serial_terminal.close()
     if imu_plotter is not None:
         imu_plotter.close()
+    
     root.quit()
     root.destroy()
 

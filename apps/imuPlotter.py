@@ -9,14 +9,17 @@ import matplotlib
 
 from tkPlotGraph import tkPlotGraph
 from apps.serialTerminal import SerialTerminal
+from configManager import get_config_manager
 
 matplotlib.use("Agg")
 
-GRAPH_MAX_SAMPLES = 50
-GRAPH_ACCEL_Y_LIMIT = 16
-GRAPH_GYRO_Y_LIMIT = 200
+# Load settings from config
+config = get_config_manager()
+GRAPH_MAX_SAMPLES = config.get("imu.graph_max_samples", 50)
+GRAPH_ACCEL_Y_LIMIT = config.get("imu.graph_accel_y_limit", 16)
+GRAPH_GYRO_Y_LIMIT = config.get("imu.graph_gyro_y_limit", 200)
+THREAD_PLOTTER_DRAW_GRAPH_INTERVAL = config.get("imu.draw_graph_interval", 0.05)
 SERIAL_IMU_BNO085_DATA_REGEX = r"(?:I\s*\(\s*(\d+)\s*\)\s*\w+:\s*)?L\.Accel\s*\(m/s\)\s*-\s*x:\s*([-+]?\d+(?:\.\d+)?)\s*y:\s*([-+]?\d+(?:\.\d+)?)\s*z:\s*([-+]?\d+(?:\.\d+)?)\s*\|\s*Euler\s*\(deg\)\s*-\s*yaw:\s*([-+]?\d+(?:\.\d+)?)\s*pitch:\s*([-+]?\d+(?:\.\d+)?)\s*roll:\s*([-+]?\d+(?:\.\d+)?)"
-THREAD_PLOTTER_DRAW_GRAPH_INTERVAL = 0.05
 
 
 class IMUPlotter:

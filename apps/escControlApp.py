@@ -5,6 +5,11 @@ import tkinter as tk
 from tkinter import ttk
 from typing import cast
 
+from configManager import get_config_manager
+
+# Load ESC configuration from config
+config = get_config_manager()
+
 
 class ESCControlApp:
     """Application for controlling Electronic Speed Controllers."""
@@ -45,28 +50,48 @@ class ESCControlApp:
         
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
         
-        self.esc_configs: list[dict[str, str | list[int]]] = [
-            self.DEFAULT_ESC_CONFIG[i].copy() for i in range(4)
-        ]
+        # Load number of ESCs from config or use default
+        self.num_escs: int = config.get("esc.num_of_esc", 4)
         
-        self.esc_gpio_comboboxes: list[ttk.Combobox | None] = [None] * 4
-        self.esc_direction_comboboxes: list[ttk.Combobox | None] = [None] * 4
-        self.esc_initialized: list[bool] = [False] * 4
+        # Load ESC configs from config file or use defaults
+        self.esc_configs: list[dict[str, str | list[int]]] = []
+        for i in range(1, self.num_escs + 1):
+            esc_cfg = config.get(f"esc.esc{i}")
+            if esc_cfg:
+                self.esc_configs.append(esc_cfg)
+            else:
+                if i - 1 < len(self.DEFAULT_ESC_CONFIG):
+                    self.esc_configs.append(self.DEFAULT_ESC_CONFIG[i-1].copy())
+                else:
+                    # Create a default config for ESCs beyond the defaults
+                    self.esc_configs.append({
+                        "gpio": f"GPIO{8 + i}",
+                        "direction": "Normal",
+                        "calibration": [1000, 1500, 1500, 1500, 2000],
+                    })
+        
+        # Load ESC frequency from config
+        self.esc_frequency = config.get("esc.frequency", "300Hz")
+        
+        # Initialize lists based on number of ESCs
+        self.esc_gpio_comboboxes: list[ttk.Combobox | None] = [None] * self.num_escs
+        self.esc_direction_comboboxes: list[ttk.Combobox | None] = [None] * self.num_escs
+        self.esc_initialized: list[bool] = [False] * self.num_escs
         self.esc_selected: list[tk.BooleanVar] = [
-            tk.BooleanVar(value=True) for _ in range(4)
+            tk.BooleanVar(value=True) for _ in range(self.num_escs)
         ]
         self.esc_calibration_entries: list[list[tk.Entry]] = []
         self.esc_power_sliders: list[tk.Scale] = []
         self.esc_power_value_labels: list[tk.Label] = []
         
-        self.esc_power_pending: list[float | None] = [None] * 4
-        self.esc_power_send_scheduled: list[bool] = [False] * 4
+        self.esc_power_pending: list[float | None] = [None] * self.num_escs
+        self.esc_power_send_scheduled: list[bool] = [False] * self.num_escs
         
         # Background thread for ESC power level monitoring
         self.esc_power_monitor_thread: threading.Thread | None = None
         self.esc_power_monitor_active: bool = True
-        self.esc_current_power_levels: list[float] = [0.0] * 4
-        self.esc_last_sent_power_levels: list[float] = [-1.0] * 4
+        self.esc_current_power_levels: list[float] = [0.0] * self.num_escs
+        self.esc_last_sent_power_levels: list[float] = [-1.0] * self.num_escs
         self.esc_power_lock = threading.Lock()
         
         main_frame: tk.Frame = tk.Frame(master=self.window)
@@ -74,7 +99,7 @@ class ESCControlApp:
         
         self._create_common_section(main_frame)
         
-        for esc_id in range(1, 5):
+        for esc_id in range(1, self.num_escs + 1):
             self._create_esc_section(main_frame, esc_id - 1, esc_id)
         
         # Auto-size window to fit content
@@ -114,7 +139,7 @@ class ESCControlApp:
             state="readonly",
             width=12,
         )
-        self.frequency_combobox.set("300Hz")
+        self.frequency_combobox.set(self.esc_frequency)
         self.frequency_combobox.pack(side=tk.LEFT, padx=2)
         
         button_frame: tk.Frame = tk.Frame(master=settings_frame)
@@ -139,18 +164,63 @@ class ESCControlApp:
         self.update_connection_state()
 
     def on_window_close(self) -> None:
-        """Hide window instead of closing it."""
+        """Hide window instead of closing it and save config."""
+        # Save current ESC configurations to config file
+        self._save_esc_config()
+        
         # Stop the background monitor thread when window closes
         self.esc_power_monitor_active = False
         if self.esc_power_monitor_thread is not None:
             self.esc_power_monitor_thread.join(timeout=1)
         self.window.withdraw()
 
+    def _save_esc_config(self) -> None:
+        """Save current ESC configurations to config file."""
+        try:
+            # Save frequency
+            frequency = self.frequency_combobox.get()
+            config.set("esc.frequency", frequency)
+            
+            # Save number of ESCs
+            config.set("esc.num_of_esc", self.num_escs)
+            
+            for index in range(self.num_escs):
+                esc_id = index + 1
+                
+                # Get current values from UI
+                if self.esc_gpio_comboboxes[index] is not None:
+                    gpio = cast(ttk.Combobox, self.esc_gpio_comboboxes[index]).get()
+                else:
+                    gpio = self.esc_configs[index].get("gpio", f"GPIO{9 + index}")
+                
+                if self.esc_direction_comboboxes[index] is not None:
+                    direction = cast(ttk.Combobox, self.esc_direction_comboboxes[index]).get()
+                else:
+                    direction = self.esc_configs[index].get("direction", "Normal")
+                
+                if hasattr(self, "esc_calibration_entries") and index < len(self.esc_calibration_entries):
+                    try:
+                        calibration = [int(entry.get()) for entry in self.esc_calibration_entries[index]]
+                    except ValueError:
+                        calibration = self.esc_configs[index].get("calibration", [1000, 1500, 1500, 1500, 2000])
+                else:
+                    calibration = self.esc_configs[index].get("calibration", [1000, 1500, 1500, 1500, 2000])
+                
+                # Update config
+                config.set(f"esc.esc{esc_id}.gpio", gpio)
+                config.set(f"esc.esc{esc_id}.direction", direction)
+                config.set(f"esc.esc{esc_id}.calibration", calibration)
+            
+            # Save config to file
+            config.save()
+        except Exception as e:
+            print(f"Error saving ESC config: {e}")
+
     def init_escs(self) -> None:
         """Send init commands for enabled ESCs."""
         command_delay = 0
         
-        for index in range(4):
+        for index in range(self.num_escs):
             esc_id = index + 1
             
             if not self.esc_selected[index].get():
@@ -236,7 +306,7 @@ class ESCControlApp:
         """Send deinit commands for enabled ESCs."""
         command_delay = 0
         
-        for index in range(4):
+        for index in range(self.num_escs):
             esc_id = index + 1
             
             if not self.esc_selected[index].get():
@@ -302,7 +372,7 @@ class ESCControlApp:
         """Update ESC control button state based on serial connection."""
         is_connected = self.parent.serial.is_connected()
         
-        selected_indices = [i for i in range(4) if self.esc_selected[i].get()]
+        selected_indices = [i for i in range(self.num_escs) if self.esc_selected[i].get()]
         
         if not is_connected:
             self.init_escs_button.config(state="disabled")
@@ -375,13 +445,15 @@ class ESCControlApp:
             print(f"Error sending command: {e}")
 
     def send_all_esc_power(self, power_levels: list[float]) -> None:
-        """Send power commands for all 4 ESCs (only if different from last sent values)."""
-        if len(power_levels) != 4:
-            print(f"Error: Expected 4 power levels, got {len(power_levels)}")
-            return
+        """Send power commands for all ESCs (only if different from last sent values)."""
+        # Truncate power_levels to match the configured number of ESCs
+        power_levels = power_levels[:self.num_escs]
+        
+        if len(power_levels) < self.num_escs:
+            print(f"Warning: Expected {self.num_escs} power levels, got {len(power_levels)}")
         
         with self.esc_power_lock:
-            for esc_index in range(4):
+            for esc_index in range(self.num_escs):
                 # Only send if power level changed and ESC is initialized
                 if power_levels[esc_index] != self.esc_last_sent_power_levels[esc_index] and self.esc_initialized[esc_index]:
                     power = power_levels[esc_index]
@@ -399,8 +471,8 @@ class ESCControlApp:
 
     def stop_all_escs(self) -> None:
         """Stop all ESCs by setting power to 0.00."""
-        # Create stop command for all 4 ESCs
-        stop_levels = [0.0] * 4
+        # Create stop command for all configured ESCs
+        stop_levels = [0.0] * self.num_escs
         self.send_all_esc_power(stop_levels)
         self._update_power_sliders()
 
@@ -411,7 +483,7 @@ class ESCControlApp:
                 # Make a copy to avoid holding lock during UI update
                 current_levels = self.esc_current_power_levels.copy()
             
-            for index in range(4):
+            for index in range(self.num_escs):
                 if index < len(self.esc_power_sliders):
                     # Convert to slider scale (0-100)
                     slider_value = int(current_levels[index] * 100)
@@ -443,7 +515,7 @@ class ESCControlApp:
             state="readonly",
             width=12,
         )
-        gpio_combobox.set(self.DEFAULT_ESC_CONFIG[index]["gpio"])
+        gpio_combobox.set(self.esc_configs[index].get("gpio", self.DEFAULT_ESC_CONFIG[index]["gpio"]))
         gpio_combobox.pack(side=tk.LEFT, padx=2)
         
         direction_frame: tk.Frame = tk.Frame(master=config_frame)
@@ -460,7 +532,7 @@ class ESCControlApp:
             state="readonly",
             width=12,
         )
-        direction_combobox.set(self.DEFAULT_ESC_CONFIG[index]["direction"])
+        direction_combobox.set(self.esc_configs[index].get("direction", self.DEFAULT_ESC_CONFIG[index]["direction"]))
         direction_combobox.pack(side=tk.LEFT, padx=2)
         
         toggle_checkbox: tk.Checkbutton = tk.Checkbutton(
@@ -488,7 +560,7 @@ class ESCControlApp:
         
         calib_entries: list[tk.Entry] = []
         calib_labels: list[str] = ["BW Max", "BW Min", "Idle", "FW Min", "FW Max"]
-        default_calib: list[int] = self.DEFAULT_ESC_CONFIG[index]["calibration"]  # type: ignore
+        default_calib: list[int] = self.esc_configs[index].get("calibration", self.DEFAULT_ESC_CONFIG[index]["calibration"])  # type: ignore
         
         for i, calib_label_text in enumerate(calib_labels):
             label = tk.Label(
@@ -572,7 +644,7 @@ class ESCControlApp:
                     last_sent_levels = self.esc_last_sent_power_levels.copy()
                 
                 # Send command for each ESC if power level changed and ESC is initialized
-                for esc_index in range(4):
+                for esc_index in range(self.num_escs):
                     if current_levels[esc_index] != last_sent_levels[esc_index] and self.esc_initialized[esc_index]:
                         power = current_levels[esc_index]
                         esc_id = esc_index + 1

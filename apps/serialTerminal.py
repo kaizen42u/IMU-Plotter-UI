@@ -5,7 +5,12 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from typing import List, Callable
+import sys
 
+# Add parent directory to path to import configManager
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from configManager import get_config_manager
 from serialHandler import serialHandler
 from ansiEncoding import ANSI
 from tkAutocompleteCombobox import tkAutocompleteCombobox
@@ -25,6 +30,15 @@ class SerialTerminal:
         self._reconnect_enabled: bool = False
         self._reconnect_attempts: int = 0
         
+        # Get config manager
+        config = get_config_manager()
+        
+        # Load serial settings from config
+        self.port: str = config.get("serial.port", "/dev/ttyUSB0")
+        self.baudrate: int = config.get("serial.baudrate", 115200)
+        self.auto_scroll_enabled: bool = config.get("serial.auto_scroll", True)
+        self.logging_enabled_default: bool = config.get("serial.logging_enabled", True)
+        
         # Logging variables
         self.logging_enabled: bool = False
         self.log_file_path: Path | None = None
@@ -42,9 +56,10 @@ class SerialTerminal:
         
         self.setup_ui()
         
-        # Enable logging by default
-        self.logging_var.set(True)
-        self.start_logging()
+        # Enable logging based on config
+        self.logging_var.set(self.logging_enabled_default)
+        if self.logging_enabled_default:
+            self.start_logging()
         
         # Get a list of all available serial ports
         ports = self.serial.get_ports()
@@ -75,6 +90,7 @@ class SerialTerminal:
         self.port_selection_combobox = tkAutocompleteCombobox(
             master=self.control_frame, state="readonly"
         )
+        self.port_selection_combobox.set(self.port)
         self.port_selection_combobox.grid(row=0, column=1, padx=(5, 15))
         
         # Create a label for baudrate selection
@@ -90,7 +106,7 @@ class SerialTerminal:
             "115200", "230400", "460800", "921600",
         ]
         self.baudrate_combobox.set_completion_list(common_baudrates)
-        self.baudrate_combobox.set("115200")
+        self.baudrate_combobox.set(str(self.baudrate))
         self.baudrate_combobox.grid(row=0, column=3, padx=(5, 15))
         
         # Create serial connect/disconnect button
@@ -101,7 +117,7 @@ class SerialTerminal:
         self.serial_connect_toggle_button.grid(row=0, column=4, padx=5)
         
         # Create terminal auto scroll checkbox
-        self.terminal_auto_scroll_var = tk.BooleanVar(master=self.master, value=True)
+        self.terminal_auto_scroll_var = tk.BooleanVar(master=self.master, value=self.auto_scroll_enabled)
         self.terminal_auto_scroll_checkbox = tk.Checkbutton(
             master=self.control_frame,
             text="Auto Scroll",
@@ -114,7 +130,7 @@ class SerialTerminal:
         self.terminal_auto_scroll_checkbox.grid(row=0, column=5, padx=5)
         
         # Create logging checkbox
-        self.logging_var = tk.BooleanVar(master=self.master, value=True)
+        self.logging_var = tk.BooleanVar(master=self.master, value=self.logging_enabled_default)
         self.logging_checkbox = tk.Checkbutton(
             master=self.control_frame,
             text="Logging",
@@ -230,9 +246,22 @@ class SerialTerminal:
             print(f"[W] Error writing to log: {e}")
 
     def close(self) -> None:
+        self._save_serial_config()
         if self.logging_enabled:
             self.stop_logging()
         self.serial.close()
+    
+    def _save_serial_config(self) -> None:
+        """Save serial configuration to config file."""
+        try:
+            config = get_config_manager()
+            config.set("serial.port", self.port_selection_combobox.get())
+            config.set("serial.baudrate", int(self.baudrate_combobox.get()))
+            config.set("serial.auto_scroll", self.terminal_auto_scroll_var.get())
+            config.set("serial.logging_enabled", self.logging_var.get())
+            config.save()
+        except Exception as e:
+            print(f"Error saving serial config: {e}")
 
     def serial_line_received(self, line: str) -> None:
         # Schedule GUI updates on the main thread

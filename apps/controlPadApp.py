@@ -3,9 +3,14 @@
 import tkinter as tk
 from typing import Optional, TYPE_CHECKING
 
+from configManager import get_config_manager
+
 if TYPE_CHECKING:
     from .lightControlApp import LightControlApp
     from .escControlApp import ESCControlApp
+
+# Load control scheme from config
+config = get_config_manager()
 
 
 class ControlPadApp:
@@ -367,44 +372,52 @@ class ControlPadApp:
             self.light_control_app.decrease_power()
 
     def _esc_forward(self) -> None:
-        """Forward: ESC1=-0.15, ESC2=0.15, ESC3=0, ESC4=0.10."""
+        """Forward movement with power levels from config."""
         if self.esc_control_app:
-            self.esc_control_app.send_all_esc_power([-0.15, 0.15, 0.0, 0.10])
+            power_levels = config.get("control_pad.forward", [-0.15, 0.15, 0.0, 0.10])
+            self.esc_control_app.send_all_esc_power(power_levels)
 
     def _esc_backward(self) -> None:
-        """Backward: ESC1=0.20, ESC2=-0.20, ESC3=0, ESC4=-0.15."""
+        """Backward movement with power levels from config."""
         if self.esc_control_app:
-            self.esc_control_app.send_all_esc_power([0.20, -0.20, 0.0, -0.15])
+            power_levels = config.get("control_pad.backward", [0.20, -0.20, 0.0, -0.15])
+            self.esc_control_app.send_all_esc_power(power_levels)
 
     def _esc_left(self) -> None:
-        """Turn left: ESC1=0, ESC2=0, ESC3=-0.15, ESC4=-0.03."""
+        """Turn left with power levels from config."""
         if self.esc_control_app:
-            self.esc_control_app.send_all_esc_power([0.0, 0.0, -0.15, -0.03])
+            power_levels = config.get("control_pad.left", [0.0, 0.0, -0.15, -0.03])
+            self.esc_control_app.send_all_esc_power(power_levels)
 
     def _esc_right(self) -> None:
-        """Turn right: ESC1=0, ESC2=0, ESC3=0.50, ESC4=-0.03."""
+        """Turn right with power levels from config."""
         if self.esc_control_app:
-            self.esc_control_app.send_all_esc_power([0.0, 0.0, 0.50, -0.03])
+            power_levels = config.get("control_pad.right", [0.0, 0.0, 0.50, -0.03])
+            self.esc_control_app.send_all_esc_power(power_levels)
 
     def _esc_up(self) -> None:
-        """Up: ESC1=0.25, ESC2=0.25, ESC3=0, ESC4=0."""
+        """Ascend with power levels from config."""
         if self.esc_control_app:
-            self.esc_control_app.send_all_esc_power([0.25, 0.25, 0.0, 0.0])
+            power_levels = config.get("control_pad.up", [0.25, 0.25, 0.0, 0.0])
+            self.esc_control_app.send_all_esc_power(power_levels)
 
     def _esc_down(self) -> None:
-        """Down: ESC1=-0.15, ESC2=-0.15, ESC3=0, ESC4=0."""
+        """Descend with power levels from config."""
         if self.esc_control_app:
-            self.esc_control_app.send_all_esc_power([-0.15, -0.15, 0.0, 0.0])
+            power_levels = config.get("control_pad.down", [-0.15, -0.15, 0.0, 0.0])
+            self.esc_control_app.send_all_esc_power(power_levels)
 
     def _esc_roll_left(self) -> None:
-        """Roll left: ESC1=0.75, ESC2=-0.3, ESC3=0, ESC4=0."""
+        """Roll left with power levels from config."""
         if self.esc_control_app:
-            self.esc_control_app.send_all_esc_power([0.75, -0.3, 0.0, 0.0])
+            power_levels = config.get("control_pad.roll_left", [0.75, -0.3, 0.0, 0.0])
+            self.esc_control_app.send_all_esc_power(power_levels)
 
     def _esc_roll_right(self) -> None:
-        """Roll right: ESC1=-0.425, ESC2=0.6, ESC3=0, ESC4=0."""
+        """Roll right with power levels from config."""
         if self.esc_control_app:
-            self.esc_control_app.send_all_esc_power([-0.425, 0.6, 0.0, 0.0])
+            power_levels = config.get("control_pad.roll_right", [-0.425, 0.6, 0.0, 0.0])
+            self.esc_control_app.send_all_esc_power(power_levels)
 
     def _stop_escs(self) -> None:
         """Stop all ESCs by setting power to 0.00."""

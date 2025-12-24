@@ -1,0 +1,118 @@
+{
+  "serial": {
+    "port": "/dev/ttyUSB0",
+    "baudrate": 115200,
+    "timeout": 1.0,
+    "auto_scroll": true,
+    "logging_enabled": true
+  },
+  "esc": {
+    "num_of_esc": 4,
+    "frequency": "300Hz",
+    "esc1": {
+      "gpio": "GPIO9",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1442,
+        1500,
+        1586,
+        2000
+      ]
+    },
+    "esc2": {
+      "gpio": "GPIO10",
+      "direction": "Inverted",
+      "calibration": [
+        1000,
+        1444,
+        1500,
+        1551,
+        2000
+      ]
+    },
+    "esc3": {
+      "gpio": "GPIO11",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1440,
+        1500,
+        1556,
+        2000
+      ]
+    },
+    "esc4": {
+      "gpio": "GPIO12",
+      "direction": "Inverted",
+      "calibration": [
+        1000,
+        1492,
+        1500,
+        1514,
+        2000
+      ]
+    }
+  },
+  "light": {
+    "gpio": "GPIO14",
+    "frequency": "44100Hz",
+    "gamma": "2.3"
+  },
+  "control_pad": {
+    "forward": [
+      -0.15,
+      0.15,
+      0.0,
+      0.1
+    ],
+    "backward": [
+      0.2,
+      -0.2,
+      0.0,
+      -0.15
+    ],
+    "left": [
+      0.0,
+      0.0,
+      -0.15,
+      -0.03
+    ],
+    "right": [
+      0.0,
+      0.0,
+      0.5,
+      -0.03
+    ],
+    "up": [
+      0.25,
+      0.25,
+      0.0,
+      0.0
+    ],
+    "down": [
+      -0.15,
+      -0.15,
+      0.0,
+      0.0
+    ],
+    "roll_left": [
+      0.75,
+      -0.3,
+      0.0,
+      0.0
+    ],
+    "roll_right": [
+      -0.425,
+      0.6,
+      0.0,
+      0.0
+    ]
+  },
+  "imu": {
+    "graph_max_samples": 50,
+    "graph_accel_y_limit": 16,
+    "graph_gyro_y_limit": 200,
+    "draw_graph_interval": 0.05
+  }
+}

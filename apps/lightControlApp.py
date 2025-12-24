@@ -4,6 +4,11 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
+from configManager import get_config_manager
+
+# Load light configuration from config
+config = get_config_manager()
+
 
 class LightControlApp:
     """Application for controlling a single LED light."""
@@ -26,10 +31,15 @@ class LightControlApp:
         
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
         
+        # Load light config
+        self.light_gpio = config.get("light.gpio", "GPIO14")
+        self.light_frequency = config.get("light.frequency", "44100Hz")
+        self.light_gamma_str = config.get("light.gamma", "2.3")
+        
         self.light_initialized: bool = False
         self.light_power_pending: float | None = None
         self.light_power_send_scheduled: bool = False
-        self.current_gamma: float = 2.3
+        self.current_gamma: float = float(self.light_gamma_str)
         
         # Background thread for power level monitoring
         self.power_monitor_thread: threading.Thread | None = None
@@ -81,7 +91,7 @@ class LightControlApp:
             state="readonly",
             width=12,
         )
-        self.gpio_combobox.set("GPIO14")
+        self.gpio_combobox.set(self.light_gpio)
         self.gpio_combobox.pack(side=tk.LEFT, padx=2)
         
         # Frequency selection
@@ -97,7 +107,7 @@ class LightControlApp:
             state="readonly",
             width=12,
         )
-        self.frequency_combobox.set("44100Hz")
+        self.frequency_combobox.set(self.light_frequency)
         self.frequency_combobox.pack(side=tk.LEFT, padx=2)
         
         # Gamma selection
@@ -113,7 +123,7 @@ class LightControlApp:
             state="readonly",
             width=8,
         )
-        self.gamma_combobox.set("2.3")
+        self.gamma_combobox.set(self.light_gamma_str)
         self.gamma_combobox.pack(side=tk.LEFT, padx=2)
         self.gamma_combobox.bind("<<ComboboxSelected>>", self.on_gamma_changed)
         
@@ -345,9 +355,27 @@ class LightControlApp:
             self.deinit_button.config(state="normal" if self.light_initialized else "disabled")
 
     def on_window_close(self) -> None:
-        """Hide window instead of closing it."""
+        """Hide window instead of closing it and save config."""
+        # Save current light configuration to config file
+        self._save_light_config()
+        
         # Stop the background monitor thread when window closes
         self.power_monitor_active = False
         if self.power_monitor_thread is not None:
             self.power_monitor_thread.join(timeout=1)
         self.window.withdraw()
+
+    def _save_light_config(self) -> None:
+        """Save current light configuration to config file."""
+        try:
+            gpio = self.gpio_combobox.get()
+            frequency = self.frequency_combobox.get()
+            gamma = self.gamma_combobox.get()
+            
+            config.set("light.gpio", gpio)
+            config.set("light.frequency", frequency)
+            config.set("light.gamma", gamma)
+            
+            config.save()
+        except Exception as e:
+            print(f"Error saving light config: {e}")
