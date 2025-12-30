@@ -12,7 +12,7 @@ class ConfigManager:
 
     def __init__(self, config_path: Optional[Path] = None) -> None:
         """Initialize configuration manager.
-        
+
         Args:
             config_path: Path to config.json file. If None, uses default location.
         """
@@ -46,17 +46,17 @@ class ConfigManager:
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value by dot notation key.
-        
+
         Args:
             key: Configuration key using dot notation (e.g., 'serial.port')
             default: Default value if key not found
-            
+
         Returns:
             Configuration value or default
         """
         keys = key.split(".")
         value = self.config
-        
+
         for k in keys:
             if isinstance(value, dict):
                 value = value.get(k)
@@ -64,25 +64,25 @@ class ConfigManager:
                     return default
             else:
                 return default
-        
+
         return value if value is not None else default
 
     def set(self, key: str, value: Any) -> None:
         """Set a configuration value by dot notation key.
-        
+
         Args:
             key: Configuration key using dot notation (e.g., 'serial.port')
             value: Value to set
         """
         keys = key.split(".")
         config = self.config
-        
+
         # Navigate to the parent dictionary
         for k in keys[:-1]:
             if k not in config:
                 config[k] = {}
             config = config[k]
-        
+
         # Set the value
         config[keys[-1]] = value
 
@@ -97,4 +97,3 @@ def get_config_manager() -> ConfigManager:
     if config_manager is None:
         config_manager = ConfigManager()
     return config_manager
-
