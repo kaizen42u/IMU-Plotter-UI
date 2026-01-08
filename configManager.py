@@ -49,7 +49,8 @@ class ConfigManager:
 
         Args:
             key: Configuration key using dot notation (e.g., 'serial.port')
-            default: Default value if key not found
+            default: Default value if key not found. If provided and key not found,
+                     the default will be saved to config and persisted.
 
         Returns:
             Configuration value or default
@@ -61,8 +62,16 @@ class ConfigManager:
             if isinstance(value, dict):
                 value = value.get(k)
                 if value is None:
+                    # Key not found - if default provided, save it
+                    if default is not None:
+                        self.set(key, default)
+                        self.save()
                     return default
             else:
+                # Path doesn't exist - if default provided, save it
+                if default is not None:
+                    self.set(key, default)
+                    self.save()
                 return default
 
         return value if value is not None else default

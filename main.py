@@ -8,12 +8,16 @@ from apps.imuPlotter import IMUPlotter
 from apps.escControlApp import ESCControlApp
 from apps.lightControlApp import LightControlApp
 from apps.controlPadApp import ControlPadApp
+from apps.vc288App import VC288App
+from apps.leakageApp import LeakageApp
 
 
 # Global references for control apps
 esc_control_app: Optional[ESCControlApp] = None
 light_control_app: Optional[LightControlApp] = None
 control_pad_app: Optional[ControlPadApp] = None
+vc288_app: Optional[VC288App] = None
+leakage_app: Optional[LeakageApp] = None
 imu_plotter_window: Optional[tk.Toplevel] = None
 imu_plotter_app: Optional[IMUPlotter] = None
 
@@ -158,12 +162,60 @@ def toggle_imu_plotter(serial_terminal: SerialTerminal):
                 imu_plotter_window.lift()
 
 
+def toggle_vc288(serial_terminal: SerialTerminal):
+    """Toggle VC288 sensor window visibility."""
+    global vc288_app
+
+    if vc288_app is None or not vc288_app.window.winfo_exists():
+        vc288_app = VC288App(parent=serial_terminal)
+
+        # Handle window close - just hide it instead of destroying
+        def on_vc288_window_close():
+            if vc288_app is not None:
+                vc288_app.window.withdraw()
+
+        vc288_app.window.protocol("WM_DELETE_WINDOW", on_vc288_window_close)
+    else:
+        # Toggle visibility
+        if vc288_app.window.winfo_viewable():
+            vc288_app.window.withdraw()
+        else:
+            vc288_app.window.deiconify()
+            vc288_app.window.lift()
+
+
+def toggle_leakage(serial_terminal: SerialTerminal):
+    """Toggle Leakage sensor window visibility."""
+    global leakage_app
+
+    if leakage_app is None or not leakage_app.window.winfo_exists():
+        leakage_app = LeakageApp(parent=serial_terminal)
+
+        # Handle window close - just hide it instead of destroying
+        def on_leakage_window_close():
+            if leakage_app is not None:
+                leakage_app.window.withdraw()
+
+        leakage_app.window.protocol("WM_DELETE_WINDOW", on_leakage_window_close)
+    else:
+        # Toggle visibility
+        if leakage_app.window.winfo_viewable():
+            leakage_app.window.withdraw()
+        else:
+            leakage_app.window.deiconify()
+            leakage_app.window.lift()
+
+
 def update_control_apps_state():
     """Update control apps when connection state changes."""
     if esc_control_app and esc_control_app.window.winfo_exists():
         esc_control_app.update_connection_state()
     if light_control_app and light_control_app.window.winfo_exists():
         light_control_app.update_connection_state()
+    if vc288_app and vc288_app.window.winfo_exists():
+        vc288_app.update_connection_state()
+    if leakage_app and leakage_app.window.winfo_exists():
+        leakage_app.update_connection_state()
 
 
 def on_closing(serial_terminal: SerialTerminal, imu_plotter, root: tk.Tk):
@@ -250,6 +302,24 @@ def main():
     )
     control_pad_button.config(width=20)
     control_pad_button.grid(row=3, column=0, padx=2, pady=2)
+
+    # Add VC288 sensor button
+    vc288_button = tk.Button(
+        master=buttons_frame,
+        text="VC288 Sensor",
+        command=lambda: toggle_vc288(serial_terminal),
+    )
+    vc288_button.config(width=20)
+    vc288_button.grid(row=4, column=0, padx=2, pady=2)
+
+    # Add Leakage sensor button
+    leakage_button = tk.Button(
+        master=buttons_frame,
+        text="Leakage Sensor",
+        command=lambda: toggle_leakage(serial_terminal),
+    )
+    leakage_button.config(width=20)
+    leakage_button.grid(row=5, column=0, padx=2, pady=2)
 
     # Register callback to update control apps when connection state changes
     serial_terminal.register_connection_state_callback(update_control_apps_state)

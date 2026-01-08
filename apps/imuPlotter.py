@@ -1,9 +1,9 @@
 """IMU Plotter module for displaying accelerometer and gyroscope data."""
 
-import re
 import threading
 import tkinter as tk
 from datetime import datetime
+from tkinter import ttk
 
 import matplotlib
 import numpy as np
@@ -23,7 +23,10 @@ GRAPH_MAX_SAMPLES = config.get("imu.graph_max_samples", 50)
 GRAPH_ACCEL_Y_LIMIT = config.get("imu.graph_accel_y_limit", 16)
 GRAPH_GYRO_Y_LIMIT = config.get("imu.graph_gyro_y_limit", 200)
 THREAD_PLOTTER_DRAW_GRAPH_INTERVAL = config.get("imu.draw_graph_interval", 0.05)
-SERIAL_IMU_BNO085_DATA_REGEX = r"BNO085\s*\[\s*(\d+)\s*ms\]\s*\|\s*Yaw:\s*([-+]?\d+(?:\.\d+)?)°\s*Pitch:\s*([-+]?\d+(?:\.\d+)?)°\s*Roll:\s*([-+]?\d+(?:\.\d+)?)°\s*\|\s*X\s*Accel:\s*([-+]?\d+(?:\.\d+)?)\s*m/s²\s*Y\s*Accel:\s*([-+]?\d+(?:\.\d+)?)\s*m/s²\s*Z\s*Accel:\s*([-+]?\d+(?:\.\d+)?)\s*m/s²"
+
+# Event IDs for BNO085 IMU data
+EVENT_BNO085_ROTATION_VECTOR = "0x10"
+EVENT_BNO085_LINEAR_ACCELERATION = "0x11"
 
 
 class IMUPlotter:
@@ -36,7 +39,6 @@ class IMUPlotter:
         self.serial_terminal: SerialTerminal = serial_terminal
         self.killed: bool = False
         self.stop_event = threading.Event()
-        self.show_imu_data: bool = True
 
         # Store current Euler angles for 3D visualization
         self.current_yaw: float = 0.0
@@ -49,10 +51,26 @@ class IMUPlotter:
         self.roll_offset: float = 0.0
         self.nulling_enabled: bool = False
 
+        # Load BNO085 configuration
+        config = get_config_manager()
+        self.bno085_tx_gpio = config.get("bno085.tx_gpio", "GPIO5")
+        self.bno085_rx_gpio = config.get("bno085.rx_gpio", "GPIO4")
+        self.bno085_initialized: bool = False
+
         self.setup_ui()
 
-        # Register callback with SerialTerminal instead of directly with serial
-        self.serial_terminal.register_line_received_callback(self.update_graphs)
+        # Register event callbacks with SerialTerminal
+        self.serial_terminal.register_event_callback(
+            EVENT_BNO085_ROTATION_VECTOR, self.on_rotation_vector_event
+        )
+        self.serial_terminal.register_event_callback(
+            EVENT_BNO085_LINEAR_ACCELERATION, self.on_linear_acceleration_event
+        )
+
+        # Register connection state callback to update button states
+        self.serial_terminal.register_connection_state_callback(
+            self.update_connection_state
+        )
 
         # Create thread to draw graphs
         self.draw_graphs_thread = threading.Thread(target=self.draw_graphs, daemon=True)
@@ -90,23 +108,14 @@ class IMUPlotter:
 
         # Create a frame containing options (will hold buttons frame)
         self.options_frame = tk.Frame(master=self.graphs_frame)
-        self.options_frame.grid(row=0, column=3, sticky="ew", padx=(2, 2))
+        self.options_frame.grid(row=0, column=3, sticky="nsew", padx=(2, 2))
 
-        # Create show/hide IMU data button (in its own frame within options)
-        self.imu_toggle_frame = tk.Frame(master=self.options_frame)
-        self.imu_toggle_frame.grid(row=0, column=0, sticky="w")
-
-        self.imu_data_toggle_button = tk.Button(
-            master=self.imu_toggle_frame,
-            text="Hide IMU data",
-            command=self.toggle_imu_data,
-        )
-        self.imu_data_toggle_button.config(width=20)
-        self.imu_data_toggle_button.grid(row=0, column=0, padx=2, pady=2)
+        # Create BNO085 configuration frame
+        self.create_bno085_config_section()
 
         # Create null angles button
         self.null_frame = tk.Frame(master=self.options_frame)
-        self.null_frame.grid(row=1, column=0, sticky="w")
+        self.null_frame.grid(row=3, column=0, sticky="w", pady=(10, 0))
 
         self.null_button = tk.Button(
             master=self.null_frame,
@@ -115,6 +124,128 @@ class IMUPlotter:
         )
         self.null_button.config(width=20)
         self.null_button.grid(row=0, column=0, padx=2, pady=2)
+
+    def create_bno085_config_section(self) -> None:
+        """Create BNO085 configuration section with GPIO and Init/Deinit buttons."""
+        GPIO_OPTIONS: list[str] = [f"GPIO{i}" for i in range(22)] + [
+            f"GPIO{i}" for i in range(26, 49)
+        ]
+
+        config_frame: tk.LabelFrame = tk.LabelFrame(
+            master=self.options_frame,
+            text="BNO085 Config",
+            font=("Arial", 9, "bold"),
+            padx=5,
+            pady=5,
+        )
+        config_frame.grid(row=0, column=0, sticky="w", pady=(0, 5))
+
+        # TX GPIO selection
+        tx_frame: tk.Frame = tk.Frame(master=config_frame)
+        tx_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+
+        tx_label: tk.Label = tk.Label(master=tx_frame, text="TX:", width=5, anchor="w")
+        tx_label.pack(side=tk.LEFT, padx=2)
+
+        self.bno085_tx_combobox: ttk.Combobox = ttk.Combobox(
+            master=tx_frame,
+            values=GPIO_OPTIONS,
+            state="readonly",
+            width=10,
+        )
+        self.bno085_tx_combobox.set(self.bno085_tx_gpio)
+        self.bno085_tx_combobox.pack(side=tk.LEFT, padx=2)
+
+        # RX GPIO selection
+        rx_frame: tk.Frame = tk.Frame(master=config_frame)
+        rx_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+
+        rx_label: tk.Label = tk.Label(master=rx_frame, text="RX:", width=5, anchor="w")
+        rx_label.pack(side=tk.LEFT, padx=2)
+
+        self.bno085_rx_combobox: ttk.Combobox = ttk.Combobox(
+            master=rx_frame,
+            values=GPIO_OPTIONS,
+            state="readonly",
+            width=10,
+        )
+        self.bno085_rx_combobox.set(self.bno085_rx_gpio)
+        self.bno085_rx_combobox.pack(side=tk.LEFT, padx=2)
+
+        # Init/Deinit buttons
+        button_frame: tk.Frame = tk.Frame(master=config_frame)
+        button_frame.pack(side=tk.TOP, fill=tk.X, pady=(5, 0))
+
+        self.bno085_init_button: tk.Button = tk.Button(
+            master=button_frame,
+            text="Init",
+            command=self.bno085_init,
+            width=8,
+        )
+        self.bno085_init_button.pack(side=tk.LEFT, padx=1)
+
+        self.bno085_deinit_button: tk.Button = tk.Button(
+            master=button_frame,
+            text="Deinit",
+            command=self.bno085_deinit,
+            width=8,
+        )
+        self.bno085_deinit_button.pack(side=tk.LEFT, padx=1)
+
+    def bno085_init(self) -> None:
+        """Initialize BNO085 sensor with selected GPIO pins."""
+        try:
+            if not self.serial_terminal.serial.is_connected():
+                print("Serial port not connected")
+                return
+
+            # Get selected GPIO values
+            self.bno085_tx_gpio = self.bno085_tx_combobox.get()
+            self.bno085_rx_gpio = self.bno085_rx_combobox.get()
+
+            # Save configuration
+            self._save_bno085_config()
+
+            # Send init command
+            command = f"bno085 init {self.bno085_tx_gpio} {self.bno085_rx_gpio}\n"
+            self.serial_terminal.serial.send(command)
+            self.bno085_initialized = True
+            print(
+                f"BNO085 initialized with TX={self.bno085_tx_gpio}, RX={self.bno085_rx_gpio}"
+            )
+        except Exception as e:
+            print(f"Error initializing BNO085: {e}")
+
+    def bno085_deinit(self) -> None:
+        """Deinitialize BNO085 sensor."""
+        try:
+            if not self.serial_terminal.serial.is_connected():
+                print("Serial port not connected")
+                return
+
+            # Send deinit command
+            command = "bno085 deinit\n"
+            self.serial_terminal.serial.send(command)
+            self.bno085_initialized = False
+            print("BNO085 deinitialized")
+        except Exception as e:
+            print(f"Error deinitializing BNO085: {e}")
+
+    def _save_bno085_config(self) -> None:
+        """Save BNO085 configuration to config file."""
+        try:
+            config = get_config_manager()
+            config.set("bno085.tx_gpio", self.bno085_tx_gpio)
+            config.set("bno085.rx_gpio", self.bno085_rx_gpio)
+            config.save()
+        except Exception as e:
+            print(f"Error saving BNO085 config: {e}")
+
+    def update_connection_state(self) -> None:
+        """Update button states based on connection state."""
+        is_connected = self.serial_terminal.serial.is_connected()
+        self.bno085_init_button.config(state="normal" if is_connected else "disabled")
+        self.bno085_deinit_button.config(state="normal" if is_connected else "disabled")
 
     def create_3d_visualization(self) -> None:
         """Create 3D visualization frame with cube and axes."""
@@ -319,11 +450,6 @@ class IMUPlotter:
         """Get the frame where external buttons should be added."""
         return self.options_frame
 
-    def toggle_imu_data(self) -> None:
-        self.show_imu_data = not self.show_imu_data
-        display_text = "Hide IMU data" if self.show_imu_data else "Show IMU data"
-        self.imu_data_toggle_button.configure(text=display_text)
-
     def null_angles(self) -> None:
         """Toggle nulling of angles. When enabled, sets current angles as offset."""
         if not self.nulling_enabled:
@@ -341,46 +467,72 @@ class IMUPlotter:
             self.nulling_enabled = False
             self.null_button.configure(text="Null Angles")
 
-    def update_graphs(self, reading: str) -> None:
-        match = re.search(SERIAL_IMU_BNO085_DATA_REGEX, reading)
-        if match:
-            groups = match.groups()
+    def on_rotation_vector_event(self, timestamp: str, data: str) -> None:
+        """Callback for rotation vector event (0x10).
 
-            if len(groups) == 7:
-                time_group, gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z = groups
-            else:
-                time_group = None
-                acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = groups
+        Data format: "<yaw> <pitch> <roll>" (three float values in degrees)
+        Timestamp format: "       15765 ms"
+        """
+        try:
+            # Parse the three float values
+            values = data.split()
+            if len(values) >= 3:
+                yaw = float(values[0])
+                pitch = float(values[1])
+                roll = float(values[2])
 
-            if time_group is None:
+                # Update Euler angles for 3D visualization (apply offset)
+                self.current_yaw = yaw - self.yaw_offset
+                self.current_pitch = pitch - self.pitch_offset
+                self.current_roll = roll - self.roll_offset
+
+                # Extract timestamp in milliseconds
                 try:
+                    ts_str = timestamp.strip().split()[0]
+                    time_val = int(float(ts_str))
+                except (ValueError, IndexError):
                     time_val = int(datetime.now().timestamp() * 1000)
-                except Exception:
-                    time_val = 0
-            else:
+
+                # Add to gyroscope graph
+                gyroscope_data = {
+                    "x-axis": yaw,
+                    "y-axis": pitch,
+                    "z-axis": roll,
+                }
+                self.gyroscope_figure.append_dict(time_val, gyroscope_data)
+        except Exception as e:
+            print(f"Error processing rotation vector event: {e}")
+
+    def on_linear_acceleration_event(self, timestamp: str, data: str) -> None:
+        """Callback for linear acceleration event (0x11).
+
+        Data format: "<acc_x> <acc_y> <acc_z>" (three float values in m/s²)
+        Timestamp format: "       15765 ms"
+        """
+        try:
+            # Parse the three float values
+            values = data.split()
+            if len(values) >= 3:
+                acc_x = float(values[0])
+                acc_y = float(values[1])
+                acc_z = float(values[2])
+
+                # Extract timestamp in milliseconds
                 try:
-                    time_val = int(time_group)
-                except Exception:
+                    ts_str = timestamp.strip().split()[0]
+                    time_val = int(float(ts_str))
+                except (ValueError, IndexError):
                     time_val = int(datetime.now().timestamp() * 1000)
 
-            # Update Euler angles for 3D visualization (apply offset)
-            self.current_yaw = float(gyro_x) - self.yaw_offset
-            self.current_pitch = float(gyro_y) - self.pitch_offset
-            self.current_roll = float(gyro_z) - self.roll_offset
-
-            accelerometer_data = {
-                "x-axis": float(acc_x),
-                "y-axis": float(acc_y),
-                "z-axis": float(acc_z),
-            }
-            self.accelerometer_figure.append_dict(int(time_val), accelerometer_data)
-
-            gyroscope_data = {
-                "x-axis": float(gyro_x),
-                "y-axis": float(gyro_y),
-                "z-axis": float(gyro_z),
-            }
-            self.gyroscope_figure.append_dict(int(time_val), gyroscope_data)
+                # Add to accelerometer graph
+                accelerometer_data = {
+                    "x-axis": acc_x,
+                    "y-axis": acc_y,
+                    "z-axis": acc_z,
+                }
+                self.accelerometer_figure.append_dict(time_val, accelerometer_data)
+        except Exception as e:
+            print(f"Error processing linear acceleration event: {e}")
 
     def reset_graphs(self) -> None:
         self.accelerometer_figure.clear()

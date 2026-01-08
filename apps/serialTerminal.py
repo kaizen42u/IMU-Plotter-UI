@@ -19,7 +19,8 @@ from tkTerminal import tkTerminal
 import serial
 
 
-TERMINAL_MAX_WIDTH = 180
+# Load terminal settings from config
+config = get_config_manager()
 
 
 class SerialTerminal:
@@ -44,9 +45,19 @@ class SerialTerminal:
         self.log_file_path: Path | None = None
         self.log_file_handle = None
 
+        # Event filtering variables
+        self.show_events: bool = True
+        self.event_lines: List[str] = []  # Track event lines for toggling
+
         # Callbacks
         self._connection_state_callbacks: List[Callable[[], None]] = []
         self._line_received_callbacks: List[Callable[[str], None]] = []
+        self._event_callbacks: dict[str, List[Callable[[str, str], None]]] = (
+            {}
+        )  # Maps event_id to list of callbacks (timestamp, data)
+        self._pending_event_enables: set[str] = (
+            set()
+        )  # Track events waiting to be enabled
 
         # Command history
         self.command_history: List[str] = []
@@ -74,6 +85,53 @@ class SerialTerminal:
     def register_line_received_callback(self, callback: Callable[[str], None]) -> None:
         """Register a callback to be called when a line is received from serial."""
         self._line_received_callbacks.append(callback)
+
+    def register_event_callback(
+        self, event_id: str, callback: Callable[[str, str], None]
+    ) -> None:
+        """Register a callback for a specific event ID.
+
+        The callback will be called with (timestamp, data) from the event line.
+        Event line format: "[EVENT <event_id>] [<timestamp> ms] <data>"
+        Also automatically enables the event on the device.
+        """
+        if event_id not in self._event_callbacks:
+            self._event_callbacks[event_id] = []
+            # Enable the event on the device when first callback is registered
+            self._enable_event(event_id)
+
+        self._event_callbacks[event_id].append(callback)
+        print(
+            f"[DEBUG] Callback registered. Total callbacks for event {event_id}: {len(self._event_callbacks[event_id])}"
+        )
+
+    def _enable_event(self, event_id: str) -> None:
+        """Enable an event on the device."""
+        try:
+
+            hex_id = event_id
+
+            if self.serial.is_connected():
+                enable_command = f"event enable {hex_id}"
+                self.serial.send(enable_command + "\n")
+            else:
+                self._pending_event_enables.add(hex_id)
+        except Exception as e:
+            print(f"[ERROR] Error enabling event {event_id}: {e}")
+
+    def _send_pending_events(self) -> None:
+        """Send all pending event enable commands after connection is established."""
+        if not self._pending_event_enables:
+            return
+
+        for hex_id in self._pending_event_enables:
+            try:
+                enable_command = f"event enable {hex_id}"
+                self.serial.send(enable_command + "\n")
+            except Exception as e:
+                print(f"[ERROR] Error sending pending event enable {hex_id}: {e}")
+
+        self._pending_event_enables.clear()
 
     def setup_ui(self) -> None:
         # Use the entire master frame for serial terminal UI
@@ -158,7 +216,9 @@ class SerialTerminal:
         self.master.grid_columnconfigure(0, weight=1)
 
         # Create the serial terminal
-        self.terminal = tkTerminal(master=self.master, width=TERMINAL_MAX_WIDTH)
+        self.terminal = tkTerminal(
+            master=self.master, lines=config.get("serial.terminal_max_width", 180)
+        )
         self.terminal.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
         # Create a frame for the send command section
@@ -188,12 +248,25 @@ class SerialTerminal:
         )
         self.send_command_button.grid(row=0, column=2, padx=5)
 
+        # Create a show/hide events button
+        self.toggle_events_button = tk.Button(
+            master=self.send_command_frame,
+            text="Hide Events",
+            command=self.toggle_events,
+        )
+        self.toggle_events_button.grid(row=0, column=3, padx=5)
+
     def register_connection_state_callback(self, callback: Callable[[], None]) -> None:
         """Register a callback to be called when connection state changes."""
         self._connection_state_callbacks.append(callback)
 
     def _notify_connection_state_changed(self) -> None:
         """Notify all registered callbacks of connection state change."""
+        # If we just connected, send any pending event enables
+        if self.serial.is_connected() and self._pending_event_enables:
+            print(f"[DEBUG] Connection established, sending pending events")
+            self._send_pending_events()
+
         for callback in self._connection_state_callbacks:
             try:
                 callback()
@@ -271,8 +344,19 @@ class SerialTerminal:
             print(f"Error saving serial config: {e}")
 
     def serial_line_received(self, line: str) -> None:
-        # Schedule GUI updates on the main thread
-        self.master.after(0, self.terminal.write, line + "\n")
+        # Check if line is an event line
+        is_event_line = line.strip().startswith("[EVENT")
+
+        # Only display if not an event line, or if showing events
+        if not is_event_line or self.show_events:
+            # Schedule GUI updates on the main thread
+            self.master.after(0, self.terminal.write, line + "\n")
+
+        # Store event lines for later toggling
+        if is_event_line:
+            self.event_lines.append(line)
+            # Parse event and call registered callbacks
+            self._process_event_line(line)
 
         # Call all registered callbacks
         for callback in self._line_received_callbacks:
@@ -468,6 +552,81 @@ class SerialTerminal:
             )
         except Exception as e:
             print(f"[W] Error in async_log_and_display: {e}")
+
+    def _process_event_line(self, line: str) -> None:
+        """Parse an event line and call registered event callbacks.
+
+        Event format: "[EVENT <event_id>] [<timestamp> ms] <data>"
+        Example: "[EVENT 0x60] [       15765 ms]  8.24"
+        Supports both decimal and hex event IDs (e.g., "60" or "0x60")
+        """
+        try:
+            # Remove leading/trailing whitespace
+            line = line.strip()
+
+            # Check if line matches event format
+            if not line.startswith("[EVENT "):
+                return
+
+            # Find the first closing bracket (end of event ID)
+            bracket_end = line.find("]")
+            if bracket_end == -1:
+                return
+
+            # Extract event ID
+            event_id_part = line[
+                7:bracket_end
+            ].strip()  # Skip "[EVENT " and strip whitespace
+
+            # Normalize event ID: strip "0x" prefix if present for hex values
+            if event_id_part.lower().startswith("0x"):
+                event_id_normalized = event_id_part[2:]  # Remove "0x" prefix
+            else:
+                event_id_normalized = event_id_part
+
+            # Extract timestamp and data from the remaining part
+            remaining = line[bracket_end + 1 :].strip()  # Everything after "]"
+
+            timestamp = ""
+            data = ""
+
+            # Check if there's a timestamp bracket
+            if remaining.startswith("["):
+                ts_end = remaining.find("]")
+                if ts_end != -1:
+                    timestamp = remaining[
+                        1:ts_end
+                    ].strip()  # Extract timestamp content without brackets
+                    data = remaining[
+                        ts_end + 1 :
+                    ].strip()  # Everything after timestamp bracket
+            else:
+                # Fallback: treat entire remaining as data (for backward compatibility)
+                data = remaining
+
+            # Call registered callbacks for this event ID (try both original and normalized)
+            for event_id_key in [event_id_normalized, event_id_part]:
+                if event_id_key in self._event_callbacks:
+                    for callback in self._event_callbacks[event_id_key]:
+                        try:
+                            self.master.after(0, callback, timestamp, data)
+                        except Exception as e:
+                            print(f"Error in event callback for {event_id_key}: {e}")
+        except Exception as e:
+            print(f"Error processing event line: {e}")
+
+    def toggle_events(self) -> None:
+        """Toggle the display of event lines."""
+        self.show_events = not self.show_events
+        self.toggle_events_button.config(
+            text="Hide Events" if self.show_events else "Show Events"
+        )
+
+        # Note: Toggling only affects new incoming lines.
+        # To update existing displayed events, we would need to rebuild the terminal.
+        self.show_message(
+            f"{ANSI.bYellow}Events display: {'ON' if self.show_events else 'OFF'}{ANSI.default}"
+        )
 
     def show_message(self, message: str) -> None:
         self.terminal.write(f"{ANSI.bBrightMagenta}{message}{ANSI.default}\n")
