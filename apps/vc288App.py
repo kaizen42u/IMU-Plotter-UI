@@ -26,14 +26,23 @@ class VC288App:
 
         # Load VC288 config
         self.vc288_gpio = config.get("vc288.gpio", "GPIO13")
+        self.vc288_voltage_slope: float = config.get("vc288.voltage_slope", 1.0)
         self.vc288_voltage_offset: float = config.get("vc288.voltage_offset", 0.0)
+        self.vc288_voltage_x2: float = config.get("vc288.voltage_x2", 0.0)
+        self.vc288_current_slope: float = config.get("vc288.current_slope", 1.0)
         self.vc288_current_offset: float = config.get("vc288.current_offset", 0.0)
+        self.vc288_current_x2: float = config.get("vc288.current_x2", 0.0)
         self.vc288_initialized: bool = False
 
         # Register event callbacks with the serial terminal
         self.serial_terminal = parent
         self.serial_terminal.register_event_callback("0x60", self.on_voltage_event)
         self.serial_terminal.register_event_callback("0x61", self.on_current_event)
+
+        # Register connection state callback
+        self.serial_terminal.register_connection_state_callback(
+            self.update_connection_state
+        )
 
         # Current sensor values
         self.current_voltage: str = "0.00 V"
@@ -80,6 +89,24 @@ class VC288App:
         self.gpio_combobox.set(self.vc288_gpio)
         self.gpio_combobox.pack(side=tk.LEFT, padx=2)
 
+        # Voltage slope
+        voltage_slope_frame: tk.Frame = tk.Frame(master=config_frame)
+        voltage_slope_frame.pack(side=tk.LEFT, padx=5)
+
+        voltage_slope_label: tk.Label = tk.Label(
+            master=voltage_slope_frame, text="V Slope:", anchor="w"
+        )
+        voltage_slope_label.pack(side=tk.LEFT, padx=2)
+
+        self.voltage_slope_var = tk.StringVar(value=f"{self.vc288_voltage_slope:.6f}")
+        self.voltage_slope_entry: tk.Entry = tk.Entry(
+            master=voltage_slope_frame,
+            textvariable=self.voltage_slope_var,
+            width=10,
+        )
+        self.voltage_slope_entry.pack(side=tk.LEFT, padx=2)
+        self.voltage_slope_entry.bind("<Return>", lambda e: self._save_vc288_config())
+
         # Voltage offset
         voltage_offset_frame: tk.Frame = tk.Frame(master=config_frame)
         voltage_offset_frame.pack(side=tk.LEFT, padx=5)
@@ -89,14 +116,50 @@ class VC288App:
         )
         voltage_offset_label.pack(side=tk.LEFT, padx=2)
 
-        self.voltage_offset_var = tk.StringVar(value=f"{self.vc288_voltage_offset:.2f}")
+        self.voltage_offset_var = tk.StringVar(value=f"{self.vc288_voltage_offset:.6f}")
         self.voltage_offset_entry: tk.Entry = tk.Entry(
             master=voltage_offset_frame,
             textvariable=self.voltage_offset_var,
-            width=8,
+            width=10,
         )
         self.voltage_offset_entry.pack(side=tk.LEFT, padx=2)
         self.voltage_offset_entry.bind("<Return>", lambda e: self._save_vc288_config())
+
+        # Voltage x2
+        voltage_x2_frame: tk.Frame = tk.Frame(master=config_frame)
+        voltage_x2_frame.pack(side=tk.LEFT, padx=5)
+
+        voltage_x2_label: tk.Label = tk.Label(
+            master=voltage_x2_frame, text="V X2:", anchor="w"
+        )
+        voltage_x2_label.pack(side=tk.LEFT, padx=2)
+
+        self.voltage_x2_var = tk.StringVar(value=f"{self.vc288_voltage_x2:.9f}")
+        self.voltage_x2_entry: tk.Entry = tk.Entry(
+            master=voltage_x2_frame,
+            textvariable=self.voltage_x2_var,
+            width=12,
+        )
+        self.voltage_x2_entry.pack(side=tk.LEFT, padx=2)
+        self.voltage_x2_entry.bind("<Return>", lambda e: self._save_vc288_config())
+
+        # Current slope
+        current_slope_frame: tk.Frame = tk.Frame(master=config_frame)
+        current_slope_frame.pack(side=tk.LEFT, padx=5)
+
+        current_slope_label: tk.Label = tk.Label(
+            master=current_slope_frame, text="A Slope:", anchor="w"
+        )
+        current_slope_label.pack(side=tk.LEFT, padx=2)
+
+        self.current_slope_var = tk.StringVar(value=f"{self.vc288_current_slope:.6f}")
+        self.current_slope_entry: tk.Entry = tk.Entry(
+            master=current_slope_frame,
+            textvariable=self.current_slope_var,
+            width=10,
+        )
+        self.current_slope_entry.pack(side=tk.LEFT, padx=2)
+        self.current_slope_entry.bind("<Return>", lambda e: self._save_vc288_config())
 
         # Current offset
         current_offset_frame: tk.Frame = tk.Frame(master=config_frame)
@@ -107,14 +170,32 @@ class VC288App:
         )
         current_offset_label.pack(side=tk.LEFT, padx=2)
 
-        self.current_offset_var = tk.StringVar(value=f"{self.vc288_current_offset:.2f}")
+        self.current_offset_var = tk.StringVar(value=f"{self.vc288_current_offset:.6f}")
         self.current_offset_entry: tk.Entry = tk.Entry(
             master=current_offset_frame,
             textvariable=self.current_offset_var,
-            width=8,
+            width=10,
         )
         self.current_offset_entry.pack(side=tk.LEFT, padx=2)
         self.current_offset_entry.bind("<Return>", lambda e: self._save_vc288_config())
+
+        # Current x2
+        current_x2_frame: tk.Frame = tk.Frame(master=config_frame)
+        current_x2_frame.pack(side=tk.LEFT, padx=5)
+
+        current_x2_label: tk.Label = tk.Label(
+            master=current_x2_frame, text="A X2:", anchor="w"
+        )
+        current_x2_label.pack(side=tk.LEFT, padx=2)
+
+        self.current_x2_var = tk.StringVar(value=f"{self.vc288_current_x2:.9f}")
+        self.current_x2_entry: tk.Entry = tk.Entry(
+            master=current_x2_frame,
+            textvariable=self.current_x2_var,
+            width=12,
+        )
+        self.current_x2_entry.pack(side=tk.LEFT, padx=2)
+        self.current_x2_entry.bind("<Return>", lambda e: self._save_vc288_config())
 
         # Init and Deinit buttons
         button_frame: tk.Frame = tk.Frame(master=config_frame)
@@ -195,17 +276,25 @@ class VC288App:
         """Save VC288 configuration to config file."""
         try:
             config.set("vc288.gpio", self.gpio_combobox.get())
-            # Save offsets from UI
+            # Save slopes, offsets, and x2 from UI
             try:
+                self.vc288_voltage_slope = float(self.voltage_slope_var.get())
                 self.vc288_voltage_offset = float(self.voltage_offset_var.get())
+                self.vc288_voltage_x2 = float(self.voltage_x2_var.get())
+                self.vc288_current_slope = float(self.current_slope_var.get())
                 self.vc288_current_offset = float(self.current_offset_var.get())
+                self.vc288_current_x2 = float(self.current_x2_var.get())
             except ValueError:
-                print("Invalid offset values, using previous values")
+                print("Invalid slope/offset/x2 values, using previous values")
+            config.set("vc288.voltage_slope", self.vc288_voltage_slope)
             config.set("vc288.voltage_offset", self.vc288_voltage_offset)
+            config.set("vc288.voltage_x2", self.vc288_voltage_x2)
+            config.set("vc288.current_slope", self.vc288_current_slope)
             config.set("vc288.current_offset", self.vc288_current_offset)
+            config.set("vc288.current_x2", self.vc288_current_x2)
             config.save()
             print(
-                f"[DEBUG] Saved VC288 config: GPIO={self.gpio_combobox.get()}, V_offset={self.vc288_voltage_offset}, A_offset={self.vc288_current_offset}"
+                f"[DEBUG] Saved VC288 config: GPIO={self.gpio_combobox.get()}, V_slope={self.vc288_voltage_slope}, V_offset={self.vc288_voltage_offset}, V_x2={self.vc288_voltage_x2}, A_slope={self.vc288_current_slope}, A_offset={self.vc288_current_offset}, A_x2={self.vc288_current_x2}"
             )
         except Exception as e:
             print(f"Error saving VC288 config: {e}")
@@ -285,16 +374,18 @@ class VC288App:
         try:
             # Parse voltage data - expecting format like "8.24"
             voltage_val = float(data.strip())
-            # Update offset from UI
+            # Update slope, offset and x2 from UI
             try:
+                self.vc288_voltage_slope = float(self.voltage_slope_var.get())
                 self.vc288_voltage_offset = float(self.voltage_offset_var.get())
+                self.vc288_voltage_x2 = float(self.voltage_x2_var.get())
             except ValueError:
                 pass
-            # Apply offset
-            voltage_with_offset = voltage_val + self.vc288_voltage_offset
-            self.current_voltage = f"{voltage_with_offset:.2f} V"
+            # Apply calibration: value_calibrated = offset + slope * value_raw + x2 * value_raw^2
+            voltage_calibrated = self.vc288_voltage_offset + self.vc288_voltage_slope * voltage_val + self.vc288_voltage_x2 * (voltage_val ** 2)
+            self.current_voltage = f"{voltage_calibrated:.2f} V"
             self.voltage_display.config(text=self.current_voltage)
-            # print(f"Voltage: {self.current_voltage} (raw: {voltage_val:.2f}, offset: {self.vc288_voltage_offset}, ts: {timestamp})")
+            # print(f"Voltage: {self.current_voltage} (raw: {voltage_val:.2f}, slope: {self.vc288_voltage_slope}, offset: {self.vc288_voltage_offset}, x2: {self.vc288_voltage_x2}, ts: {timestamp})")
         except ValueError:
             print(f"Invalid voltage data: {data}")
 
@@ -308,16 +399,18 @@ class VC288App:
         try:
             # Parse current data - expecting format like "0.340"
             current_val = float(data.strip())
-            # Update offset from UI
+            # Update slope, offset and x2 from UI
             try:
+                self.vc288_current_slope = float(self.current_slope_var.get())
                 self.vc288_current_offset = float(self.current_offset_var.get())
+                self.vc288_current_x2 = float(self.current_x2_var.get())
             except ValueError:
                 pass
-            # Apply offset
-            current_with_offset = current_val + self.vc288_current_offset
-            self.current_current = f"{current_with_offset:.3f} A"
+            # Apply calibration: value_calibrated = offset + slope * value_raw + x2 * value_raw^2
+            current_calibrated = self.vc288_current_offset + self.vc288_current_slope * current_val + self.vc288_current_x2 * (current_val ** 2)
+            self.current_current = f"{current_calibrated:.3f} A"
             self.current_display.config(text=self.current_current)
-            # print(f"Current: {self.current_current} (raw: {current_val:.2f}, offset: {self.vc288_current_offset})")
+            # print(f"Current: {self.current_current} (raw: {current_val:.2f}, slope: {self.vc288_current_slope}, offset: {self.vc288_current_offset}, x2: {self.vc288_current_x2})")
         except ValueError:
             print(f"Invalid current data: {data}")
 
