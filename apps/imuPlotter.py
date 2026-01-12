@@ -116,17 +116,42 @@ class IMUPlotter:
         # Create BNO085 configuration frame
         self.create_bno085_config_section()
 
-        # Create null angles button
-        self.null_frame = tk.Frame(master=self.options_frame)
-        self.null_frame.grid(row=3, column=0, sticky="w", pady=(10, 0))
-
-        self.null_button = tk.Button(
-            master=self.null_frame,
-            text="Null Angles",
-            command=self.null_angles,
+        # Create tare buttons frame
+        self.tare_frame = tk.LabelFrame(
+            master=self.options_frame,
+            text="Tare",
+            font=("Arial", 9, "bold"),
+            padx=5,
+            pady=5,
         )
-        self.null_button.config(width=20)
-        self.null_button.grid(row=0, column=0, padx=2, pady=2)
+        self.tare_frame.grid(row=3, column=0, sticky="w", pady=(10, 0))
+
+        # Tare XYZ button
+        self.tare_xyz_button = tk.Button(
+            master=self.tare_frame,
+            text="Tare XYZ",
+            command=lambda: self.send_tare_command("xyz"),
+        )
+        self.tare_xyz_button.config(width=20)
+        self.tare_xyz_button.grid(row=0, column=0, padx=2, pady=2)
+
+        # Tare Z button
+        self.tare_z_button = tk.Button(
+            master=self.tare_frame,
+            text="Tare Z",
+            command=lambda: self.send_tare_command("z"),
+        )
+        self.tare_z_button.config(width=20)
+        self.tare_z_button.grid(row=1, column=0, padx=2, pady=2)
+
+        # Tare Clear button
+        self.tare_clear_button = tk.Button(
+            master=self.tare_frame,
+            text="Tare Clear",
+            command=lambda: self.send_tare_command("clear"),
+        )
+        self.tare_clear_button.config(width=20)
+        self.tare_clear_button.grid(row=2, column=0, padx=2, pady=2)
 
     def create_bno085_config_section(self) -> None:
         """Create BNO085 configuration section with GPIO and Init/Deinit buttons."""
@@ -453,22 +478,20 @@ class IMUPlotter:
         """Get the frame where external buttons should be added."""
         return self.options_frame
 
-    def null_angles(self) -> None:
-        """Toggle nulling of angles. When enabled, sets current angles as offset."""
-        if not self.nulling_enabled:
-            # Enable nulling - store current angles as offset
-            self.yaw_offset = self.current_yaw
-            self.pitch_offset = self.current_pitch
-            self.roll_offset = self.current_roll
-            self.nulling_enabled = True
-            self.null_button.configure(text="Un-Null Angles")
-        else:
-            # Disable nulling - clear offsets
-            self.yaw_offset = 0.0
-            self.pitch_offset = 0.0
-            self.roll_offset = 0.0
-            self.nulling_enabled = False
-            self.null_button.configure(text="Null Angles")
+    def send_tare_command(self, axes: str) -> None:
+        """Send tare command to BNO085 sensor.
+        
+        Args:
+            axes: Axes to tare - 'xyz', 'z', or 'clear'
+        """
+        if not self.bno085_initialized:
+            print("BNO085 not initialized. Please initialize first.")
+            return
+        
+        command = f"bno085 tare {axes}"
+        self.serial_terminal.send_command_entry.delete(0, tk.END)
+        self.serial_terminal.send_command_entry.insert(0, command)
+        self.serial_terminal.send_command()
 
     def on_rotation_vector_event(self, timestamp: str, data: str) -> None:
         """Callback for rotation vector event (0x10).
