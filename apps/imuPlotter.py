@@ -20,6 +20,7 @@ matplotlib.use("Agg")
 # Load settings from config
 config = get_config_manager()
 GRAPH_MAX_SAMPLES = config.get("imu.graph_max_samples", 50)
+GRAPH_TIME_SPAN_MS = config.get("imu.graph_time_span_ms", 3000)
 GRAPH_ACCEL_Y_LIMIT = config.get("imu.graph_accel_y_limit", 16)
 GRAPH_GYRO_Y_LIMIT = config.get("imu.graph_gyro_y_limit", 200)
 THREAD_PLOTTER_DRAW_GRAPH_INTERVAL = config.get("imu.draw_graph_interval", 0.05)
@@ -87,7 +88,8 @@ class IMUPlotter:
         self.accelerometer_figure = tkPlotGraph(
             master=self.graphs_frame,
             title="Linear Acceleration (G)",
-            max_samples=GRAPH_MAX_SAMPLES,
+            max_samples=GRAPH_MAX_SAMPLES if GRAPH_MAX_SAMPLES > 0 else None,
+            timespan=GRAPH_TIME_SPAN_MS if GRAPH_TIME_SPAN_MS > 0 else None,
         )
         self.accelerometer_figure.grid(row=0, column=0, padx=2)
         self.accelerometer_figure.set_ylim(
@@ -101,7 +103,8 @@ class IMUPlotter:
         self.gyroscope_figure = tkPlotGraph(
             master=self.graphs_frame,
             title="Euler Angle (Degree)",
-            max_samples=GRAPH_MAX_SAMPLES,
+            max_samples=GRAPH_MAX_SAMPLES if GRAPH_MAX_SAMPLES > 0 else None,
+            timespan=GRAPH_TIME_SPAN_MS if GRAPH_TIME_SPAN_MS > 0 else None,
         )
         self.gyroscope_figure.grid(row=0, column=2, padx=2)
         self.gyroscope_figure.set_ylim(low=-GRAPH_GYRO_Y_LIMIT, high=GRAPH_GYRO_Y_LIMIT)
