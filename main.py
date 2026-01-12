@@ -34,110 +34,115 @@ def create_serial_wrapper(serial_terminal: SerialTerminal):
     return SerialWrapper(serial_terminal)
 
 
+def toggle_window(
+    app_ref: dict,
+    app_key: str,
+    create_func,
+    post_create_func=None,
+    post_toggle_func=None,
+):
+    """Generic window toggle function to reduce duplication.
+    
+    Args:
+        app_ref: Dictionary holding app references (globals())
+        app_key: Key to access app in app_ref
+        create_func: Function to create the app
+        post_create_func: Optional function to call after app creation
+        post_toggle_func: Optional function to call when toggling existing app
+    """
+    app = app_ref.get(app_key)
+    
+    if app is None or not app.window.winfo_exists():
+        app = create_func()
+        app_ref[app_key] = app
+        
+        # Generic close handler
+        def on_window_close():
+            if app_ref.get(app_key) is not None:
+                app_ref[app_key].window.withdraw()
+        
+        app.window.protocol("WM_DELETE_WINDOW", on_window_close)
+        
+        if post_create_func:
+            post_create_func(app)
+    else:
+        if post_toggle_func:
+            post_toggle_func(app)
+        
+        # Toggle visibility
+        if app.window.winfo_viewable():
+            app.window.withdraw()
+        else:
+            app.window.deiconify()
+            app.window.lift()
+
+
 def toggle_esc_control(serial_terminal: SerialTerminal):
     """Toggle ESC control window visibility."""
     global esc_control_app, control_pad_app
 
-    if esc_control_app is None or not esc_control_app.window.winfo_exists():
-        wrapper = create_serial_wrapper(serial_terminal)
-        esc_control_app = ESCControlApp(parent=wrapper)
+    def create_esc():
+        return ESCControlApp(parent=create_serial_wrapper(serial_terminal))
 
-        # Update control pad's reference to esc_control_app
+    def post_create(app):
         if control_pad_app is not None:
-            control_pad_app.set_esc_control_app(esc_control_app)
+            control_pad_app.set_esc_control_app(app)
 
-        # Handle window close - just hide it instead of destroying
-        def on_esc_window_close():
-            if esc_control_app is not None:
-                esc_control_app.window.withdraw()
-
-        esc_control_app.window.protocol("WM_DELETE_WINDOW", on_esc_window_close)
-    else:
-        # Toggle visibility - always update control pad reference
+    def post_toggle(app):
         if control_pad_app is not None:
-            control_pad_app.set_esc_control_app(esc_control_app)
+            control_pad_app.set_esc_control_app(app)
 
-        if esc_control_app.window.winfo_viewable():
-            esc_control_app.window.withdraw()
-        else:
-            esc_control_app.window.deiconify()
-            esc_control_app.window.lift()
+    toggle_window(globals(), "esc_control_app", create_esc, post_create, post_toggle)
 
 
 def toggle_light_control(serial_terminal: SerialTerminal):
     """Toggle light control window visibility."""
     global light_control_app, control_pad_app
 
-    if light_control_app is None or not light_control_app.window.winfo_exists():
-        wrapper = create_serial_wrapper(serial_terminal)
-        light_control_app = LightControlApp(parent=wrapper)
+    def create_light():
+        return LightControlApp(parent=create_serial_wrapper(serial_terminal))
 
-        # Update control pad's reference to light_control_app
+    def post_create(app):
         if control_pad_app is not None:
-            control_pad_app.set_light_control_app(light_control_app)
+            control_pad_app.set_light_control_app(app)
 
-        # Handle window close - just hide it instead of destroying
-        def on_light_window_close():
-            if light_control_app is not None:
-                light_control_app.window.withdraw()
-
-        light_control_app.window.protocol("WM_DELETE_WINDOW", on_light_window_close)
-    else:
-        # Toggle visibility - always update control pad reference
+    def post_toggle(app):
         if control_pad_app is not None:
-            control_pad_app.set_light_control_app(light_control_app)
+            control_pad_app.set_light_control_app(app)
 
-        if light_control_app.window.winfo_viewable():
-            light_control_app.window.withdraw()
-        else:
-            light_control_app.window.deiconify()
-            light_control_app.window.lift()
+    toggle_window(globals(), "light_control_app", create_light, post_create, post_toggle)
 
 
 def toggle_control_pad(serial_terminal: SerialTerminal):
     """Toggle control pad window visibility."""
-    global control_pad_app, light_control_app, esc_control_app
+    global control_pad_app
 
-    if control_pad_app is None or not control_pad_app.window.winfo_exists():
-        wrapper = create_serial_wrapper(serial_terminal)
-        control_pad_app = ControlPadApp(
-            parent=wrapper,
+    def create_pad():
+        return ControlPadApp(
+            parent=create_serial_wrapper(serial_terminal),
             light_control_app=light_control_app,
             esc_control_app=esc_control_app,
         )
 
-        # Handle window close - just hide it instead of destroying
-        def on_control_pad_window_close():
-            if control_pad_app is not None:
-                control_pad_app.window.withdraw()
+    def post_toggle(app):
+        app.set_light_control_app(light_control_app)
+        app.set_esc_control_app(esc_control_app)
 
-        control_pad_app.window.protocol("WM_DELETE_WINDOW", on_control_pad_window_close)
-    else:
-        # Update references in case control apps were created after control_pad
-        control_pad_app.set_light_control_app(light_control_app)
-        control_pad_app.set_esc_control_app(esc_control_app)
-        # Toggle visibility
-        if control_pad_app.window.winfo_viewable():
-            control_pad_app.window.withdraw()
-        else:
-            control_pad_app.window.deiconify()
-            control_pad_app.window.lift()
+    toggle_window(globals(), "control_pad_app", create_pad, None, post_toggle)
 
 
 def toggle_imu_plotter(serial_terminal: SerialTerminal):
     """Toggle IMU plotter window visibility."""
     global imu_plotter_window, imu_plotter_app
 
-    if imu_plotter_window is None or not imu_plotter_window.winfo_exists():
-        # Create new IMU plotter window
+    def create_imu():
+        global imu_plotter_window, imu_plotter_app
         imu_plotter_window = tk.Toplevel()
         imu_plotter_window.title("IMU Plotter")
 
-        # Create frame for IMU plotter
         imu_frame = tk.Frame(master=imu_plotter_window)
         imu_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Create IMU plotter in the new window
         imu_plotter_app = IMUPlotter(master=imu_frame, serial_terminal=serial_terminal)
 
         # Auto-size window to fit content
@@ -145,65 +150,35 @@ def toggle_imu_plotter(serial_terminal: SerialTerminal):
         width = imu_frame.winfo_reqwidth() + 10
         height = imu_frame.winfo_reqheight() + 10
         imu_plotter_window.geometry(f"{width}x{height}")
+        
+        # Create a wrapper object with .window attribute for compatibility with toggle_window
+        class IMUPlotterWrapper:
+            def __init__(self, window):
+                self.window = window
+        
+        return IMUPlotterWrapper(imu_plotter_window)
 
-        # Handle window close - just hide it instead of destroying
-        def on_imu_window_close():
-            if imu_plotter_window is not None:
-                imu_plotter_window.withdraw()
-
-        imu_plotter_window.protocol("WM_DELETE_WINDOW", on_imu_window_close)
-    else:
-        # Toggle visibility
-        if imu_plotter_window is not None:
-            if imu_plotter_window.winfo_viewable():
-                imu_plotter_window.withdraw()
-            else:
-                imu_plotter_window.deiconify()
-                imu_plotter_window.lift()
+    toggle_window(globals(), "imu_plotter_window", create_imu)
 
 
 def toggle_vc288(serial_terminal: SerialTerminal):
     """Toggle VC288 sensor window visibility."""
     global vc288_app
 
-    if vc288_app is None or not vc288_app.window.winfo_exists():
-        vc288_app = VC288App(parent=serial_terminal)
+    def create_vc288():
+        return VC288App(parent=serial_terminal)
 
-        # Handle window close - just hide it instead of destroying
-        def on_vc288_window_close():
-            if vc288_app is not None:
-                vc288_app.window.withdraw()
-
-        vc288_app.window.protocol("WM_DELETE_WINDOW", on_vc288_window_close)
-    else:
-        # Toggle visibility
-        if vc288_app.window.winfo_viewable():
-            vc288_app.window.withdraw()
-        else:
-            vc288_app.window.deiconify()
-            vc288_app.window.lift()
+    toggle_window(globals(), "vc288_app", create_vc288)
 
 
 def toggle_leakage(serial_terminal: SerialTerminal):
     """Toggle Leakage sensor window visibility."""
     global leakage_app
 
-    if leakage_app is None or not leakage_app.window.winfo_exists():
-        leakage_app = LeakageApp(parent=serial_terminal)
+    def create_leakage():
+        return LeakageApp(parent=serial_terminal)
 
-        # Handle window close - just hide it instead of destroying
-        def on_leakage_window_close():
-            if leakage_app is not None:
-                leakage_app.window.withdraw()
-
-        leakage_app.window.protocol("WM_DELETE_WINDOW", on_leakage_window_close)
-    else:
-        # Toggle visibility
-        if leakage_app.window.winfo_viewable():
-            leakage_app.window.withdraw()
-        else:
-            leakage_app.window.deiconify()
-            leakage_app.window.lift()
+    toggle_window(globals(), "leakage_app", create_leakage)
 
 
 def update_control_apps_state():
