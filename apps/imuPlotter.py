@@ -234,9 +234,11 @@ class IMUPlotter:
             # Save configuration
             self._save_bno085_config()
 
-            # Send init command
-            command = f"bno085 init {self.bno085_tx_gpio} {self.bno085_rx_gpio}\n"
-            self.serial_terminal.serial.send(command)
+            # Send init command (strip "GPIO" prefix from pin numbers)
+            tx_pin = self.bno085_tx_gpio.replace("GPIO", "")
+            rx_pin = self.bno085_rx_gpio.replace("GPIO", "")
+            command = f"bno085 init {tx_pin} {rx_pin}\n"
+            self.serial_terminal.send_command(command)
             self.bno085_initialized = True
             print(
                 f"BNO085 initialized with TX={self.bno085_tx_gpio}, RX={self.bno085_rx_gpio}"
