@@ -101,9 +101,6 @@ class SerialTerminal:
             self._enable_event(event_id)
 
         self._event_callbacks[event_id].append(callback)
-        print(
-            f"[DEBUG] Callback registered. Total callbacks for event {event_id}: {len(self._event_callbacks[event_id])}"
-        )
 
     def _enable_event(self, event_id: str) -> None:
         """Enable an event on the device."""
