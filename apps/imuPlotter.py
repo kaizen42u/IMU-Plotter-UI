@@ -255,7 +255,7 @@ class IMUPlotter:
 
             # Send deinit command
             command = "bno085 deinit\n"
-            self.serial_terminal.serial.send(command)
+            self.serial_terminal.send_command(command)
             self.bno085_initialized = False
             print("BNO085 deinitialized")
         except Exception as e:

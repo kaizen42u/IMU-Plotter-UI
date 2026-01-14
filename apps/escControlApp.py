@@ -471,7 +471,7 @@ class ESCControlApp:
                 command += "\n"
 
             if self.parent.serial.is_connected():
-                self.parent.serial.send(command)
+                self.parent.send_command(command)
                 threading.Thread(
                     target=self.parent._async_log_and_display,
                     args=(command,),

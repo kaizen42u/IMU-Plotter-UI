@@ -113,7 +113,7 @@ class SerialTerminal:
 
             if self.serial.is_connected():
                 enable_command = f"event enable {hex_id}"
-                self.serial.send(enable_command + "\n")
+                self.send_command(enable_command + "\n")
             else:
                 self._pending_event_enables.add(hex_id)
         except Exception as e:
@@ -127,7 +127,7 @@ class SerialTerminal:
         for hex_id in self._pending_event_enables:
             try:
                 enable_command = f"event enable {hex_id}"
-                self.serial.send(enable_command + "\n")
+                self.send_command(enable_command + "\n")
             except Exception as e:
                 print(f"[ERROR] Error sending pending event enable {hex_id}: {e}")
 
@@ -460,30 +460,44 @@ class SerialTerminal:
                 f"Could not open port [{self.port_selection_combobox.get()}]: {e}"
             )
 
-    def send_command(self) -> None:
-        """Send the command entered in the textfield over the serial port."""
-        command = self.send_command_entry.get()
-        if not command:
-            return
+    def send_command(self, command: str | None = None) -> bool:
+        """Send a command over the serial port.
+        
+        Args:
+            command: Command to send. If None, uses command from entry field.
+            
+        Returns:
+            True if command was sent successfully, False otherwise.
+        """
+        # Track if called from UI
+        from_ui = command is None
+        
+        # If no command provided, get from entry field
+        if from_ui:
+            command = self.send_command_entry.get()
+            if not command:
+                return False
 
         if not self.serial.is_connected():
-            self.show_message(
-                f"{ANSI.bRed}Error: Serial port is not connected{ANSI.default}"
-            )
-            return
+            if from_ui:  # Only show UI message if called from UI
+                self.show_message(
+                    f"{ANSI.bRed}Error: Serial port is not connected{ANSI.default}"
+                )
+            return False
 
         if not command.endswith("\n"):
             command += "\n"
 
-        # Add to history only if it's not empty and different from last command
-        command_stripped = command.rstrip("\n")
-        if command_stripped and (
-            not self.command_history or self.command_history[-1] != command_stripped
-        ):
-            self.command_history.append(command_stripped)
+        # Add to history only if called from UI
+        if from_ui:
+            command_stripped = command.rstrip("\n")
+            if command_stripped and (
+                not self.command_history or self.command_history[-1] != command_stripped
+            ):
+                self.command_history.append(command_stripped)
 
-        # Reset history index
-        self.history_index = -1
+            # Reset history index
+            self.history_index = -1
 
         success = self.serial.send(command)
 
@@ -491,10 +505,16 @@ class SerialTerminal:
             threading.Thread(
                 target=self._async_log_and_display, args=(command,), daemon=True
             ).start()
-            # Keep the text in the entry and select it for easy re-sending
-            self.send_command_entry.select_range(0, tk.END)
-        else:
-            self.show_message(f"{ANSI.bRed}Error: Failed to send command{ANSI.default}")
+        
+        # Update UI only if called from UI
+        if from_ui:
+            if success:
+                # Keep the text in the entry and select it for easy re-sending
+                self.send_command_entry.select_range(0, tk.END)
+            else:
+                self.show_message(f"{ANSI.bRed}Error: Failed to send command{ANSI.default}")
+        
+        return success
 
     def _history_previous(self) -> None:
         """Navigate to previous command in history."""

@@ -225,7 +225,7 @@ class LeakageApp:
 
             # Send init command
             command = f"leakage init {self.leakage_gpio}\n"
-            self.serial_terminal.serial.send(command)
+            self.serial_terminal.send_command(command)
             self.leakage_initialized = True
             print(f"Leakage sensor initialized on {self.leakage_gpio}")
 
@@ -238,12 +238,12 @@ class LeakageApp:
 
             # Send calibrate command
             command = f"leakage calibrate {scans}\n"
-            self.serial_terminal.serial.send(command)
+            self.serial_terminal.send_command(command)
             print(f"Leakage sensor calibration started ({scans} scans)")
 
             # Send enable command
             command = "leakage enable\n"
-            self.serial_terminal.serial.send(command)
+            self.serial_terminal.send_command(command)
             self.leakage_monitoring = True
             print("Leakage sensor monitoring enabled")
         except Exception as e:
@@ -258,13 +258,13 @@ class LeakageApp:
 
             # Send disable command
             command = "leakage disable\n"
-            self.serial_terminal.serial.send(command)
+            self.serial_terminal.send_command(command)
             self.leakage_monitoring = False
             print("Leakage sensor monitoring disabled")
 
             # Send deinit command
             command = "leakage deinit\n"
-            self.serial_terminal.serial.send(command)
+            self.serial_terminal.send_command(command)
             self.leakage_initialized = False
             print("Leakage sensor deinitialized")
         except Exception as e:
