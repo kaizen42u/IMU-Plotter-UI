@@ -147,11 +147,48 @@ class IMUPlotter:
         # Tare Clear button
         self.tare_clear_button = tk.Button(
             master=self.tare_frame,
-            text="Tare Clear",
+            text="Clear Tare",
             command=lambda: self.send_tare_command("clear"),
         )
         self.tare_clear_button.config(width=20)
         self.tare_clear_button.grid(row=2, column=0, padx=2, pady=2)
+
+        # Create offset buttons frame
+        self.offset_frame = tk.LabelFrame(
+            master=self.options_frame,
+            text="Offset",
+            font=("Arial", 9, "bold"),
+            padx=5,
+            pady=5,
+        )
+        self.offset_frame.grid(row=4, column=0, sticky="w", pady=(10, 0))
+
+        # Offset All button
+        self.offset_all_button = tk.Button(
+            master=self.offset_frame,
+            text="Null Offsets",
+            command=self.offset_all,
+        )
+        self.offset_all_button.config(width=20)
+        self.offset_all_button.grid(row=0, column=0, padx=2, pady=2)
+
+        # Offset Yaw button
+        self.offset_yaw_button = tk.Button(
+            master=self.offset_frame,
+            text="Null Offsets (Yaw)",
+            command=self.offset_yaw,
+        )
+        self.offset_yaw_button.config(width=20)
+        self.offset_yaw_button.grid(row=1, column=0, padx=2, pady=2)
+
+        # Offset Clear button
+        self.offset_clear_button = tk.Button(
+            master=self.offset_frame,
+            text="Clear Offsets",
+            command=self.offset_clear,
+        )
+        self.offset_clear_button.config(width=20)
+        self.offset_clear_button.grid(row=2, column=0, padx=2, pady=2)
 
     def create_bno085_config_section(self) -> None:
         """Create BNO085 configuration section with GPIO and Init/Deinit buttons."""
@@ -315,8 +352,8 @@ class IMUPlotter:
 
         # Rotate cube based on Euler angles (yaw, pitch, roll)
         yaw_rad = np.radians(self.current_yaw)
-        pitch_rad = np.radians(-self.current_pitch)  # Invert pitch for visual
-        roll_rad = np.radians(-self.current_roll)  # Invert roll for visual
+        pitch_rad = np.radians(self.current_pitch)
+        roll_rad = np.radians(self.current_roll)
 
         # Rotation matrices
         R_yaw = np.array(
@@ -490,6 +527,22 @@ class IMUPlotter:
         self.serial_terminal.send_command_entry.delete(0, tk.END)
         self.serial_terminal.send_command_entry.insert(0, command)
         self.serial_terminal.send_command()
+
+    def offset_all(self) -> None:
+        """Save current angles as offsets for all axes."""
+        self.yaw_offset = self.yaw_offset + self.current_yaw
+        self.pitch_offset = self.pitch_offset + self.current_pitch
+        self.roll_offset = self.roll_offset + self.current_roll
+
+    def offset_yaw(self) -> None:
+        """Save current yaw as offset for yaw axis only."""
+        self.yaw_offset = self.yaw_offset + self.current_yaw
+
+    def offset_clear(self) -> None:
+        """Clear all offsets (set to 0)."""
+        self.yaw_offset = 0.0
+        self.pitch_offset = 0.0
+        self.roll_offset = 0.0
 
     def on_rotation_vector_event(self, timestamp: str, data: str) -> None:
         """Callback for rotation vector event (0x10).
