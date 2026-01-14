@@ -32,12 +32,18 @@ class LightControlApp:
         f"{i:.1f}" for i in [round(x * 0.1, 1) for x in range(10, 31)]
     ]
 
-    def __init__(self, parent) -> None:
+    def __init__(self, parent: tk.Tk | tk.Frame, serial_terminal) -> None:
         self.parent = parent
-        self.window: tk.Toplevel = tk.Toplevel(parent.master)
+        self.serial_terminal = serial_terminal
+        self.window: tk.Toplevel = tk.Toplevel(parent)
         self.window.title("Light Control")
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
+
+        # Register connection state callback
+        self.serial_terminal.register_connection_state_callback(
+            self._on_connection_state_changed
+        )
 
         # Load light config
         self.light_gpio = config.get("light.gpio", "GPIO14")
@@ -71,6 +77,11 @@ class LightControlApp:
         self._start_power_monitor_thread()
 
         self.update_connection_state()
+
+    def _on_connection_state_changed(self) -> None:
+        """Callback when connection state changes."""
+        if self.window.winfo_exists():
+            self.update_connection_state()
 
     def _create_light_section(self, parent: tk.Frame) -> None:
         """Create the LED Light control section."""
@@ -255,13 +266,8 @@ class LightControlApp:
             if not command.endswith("\n"):
                 command += "\n"
 
-            if self.parent.serial.is_connected():
-                self.parent.send_command(command)
-                threading.Thread(
-                    target=self.parent._async_log_and_display,
-                    args=(command,),
-                    daemon=True,
-                ).start()
+            if self.serial_terminal.serial.is_connected():
+                self.serial_terminal.send_command(command)
             else:
                 print("Serial port is not connected")
         except Exception as e:
@@ -280,31 +286,31 @@ class LightControlApp:
         freq_num = freq_str.replace("Hz", "")
 
         config_command = f"light config {gpio_num} {freq_num}"
-        self.parent.master.after(0, lambda cmd=config_command: self._send_command(cmd))
+        self.window.after(0, lambda cmd=config_command: self._send_command(cmd))
 
         freq_command = f"light freq {freq_num}"
-        self.parent.master.after(200, lambda cmd=freq_command: self._send_command(cmd))
+        self.window.after(200, lambda cmd=freq_command: self._send_command(cmd))
 
         self.light_initialized = True
-        self.parent.master.after(400, self.update_light_config_state)
-        self.parent.master.after(400, self.update_connection_state)
+        self.window.after(400, self.update_light_config_state)
+        self.window.after(400, self.update_connection_state)
 
     def deinit_light(self) -> None:
         """Send deinit command for the light."""
         set_zero_command = "light set 0"
-        self.parent.master.after(
+        self.window.after(
             0, lambda cmd=set_zero_command: self._send_command(cmd)
         )
 
         delete_command = "light delete"
-        self.parent.master.after(
+        self.window.after(
             200, lambda cmd=delete_command: self._send_command(cmd)
         )
 
         self.light_initialized = False
         self.power_slider.set(0)
-        self.parent.master.after(400, self.update_light_config_state)
-        self.parent.master.after(400, self.update_connection_state)
+        self.window.after(400, self.update_light_config_state)
+        self.window.after(400, self.update_connection_state)
 
     def update_light_config_state(self) -> None:
         """Update UI state based on initialization status."""
@@ -373,7 +379,7 @@ class LightControlApp:
 
     def update_connection_state(self) -> None:
         """Update button state based on serial connection and initialization."""
-        is_connected = self.parent.serial.is_connected()
+        is_connected = self.serial_terminal.serial.is_connected()
 
         if not is_connected:
             self.init_button.config(state="disabled")

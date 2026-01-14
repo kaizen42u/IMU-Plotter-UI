@@ -22,18 +22,6 @@ imu_plotter_window: Optional[tk.Toplevel] = None
 imu_plotter_app: Optional[IMUPlotter] = None
 
 
-def create_serial_wrapper(serial_terminal: SerialTerminal):
-    """Create a wrapper object with serial attribute for compatibility with control apps."""
-
-    class SerialWrapper:
-        def __init__(self, serial_terminal):
-            self.serial = serial_terminal.serial
-            self.master = serial_terminal.master
-            self._async_log_and_display = serial_terminal._async_log_and_display
-
-    return SerialWrapper(serial_terminal)
-
-
 def toggle_window(
     app_ref: dict,
     app_key: str,
@@ -82,7 +70,7 @@ def toggle_esc_control(serial_terminal: SerialTerminal):
     global esc_control_app, control_pad_app
 
     def create_esc():
-        return ESCControlApp(parent=create_serial_wrapper(serial_terminal))
+        return ESCControlApp(parent=serial_terminal.master, serial_terminal=serial_terminal)
 
     def post_create(app):
         if control_pad_app is not None:
@@ -100,7 +88,7 @@ def toggle_light_control(serial_terminal: SerialTerminal):
     global light_control_app, control_pad_app
 
     def create_light():
-        return LightControlApp(parent=create_serial_wrapper(serial_terminal))
+        return LightControlApp(parent=serial_terminal.master, serial_terminal=serial_terminal)
 
     def post_create(app):
         if control_pad_app is not None:
@@ -119,7 +107,8 @@ def toggle_control_pad(serial_terminal: SerialTerminal):
 
     def create_pad():
         return ControlPadApp(
-            parent=create_serial_wrapper(serial_terminal),
+            parent=serial_terminal.master,
+            serial_terminal=serial_terminal,
             light_control_app=light_control_app,
             esc_control_app=esc_control_app,
         )

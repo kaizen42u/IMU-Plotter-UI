@@ -358,7 +358,6 @@ class VC288App:
         try:
             if self.serial_terminal.serial.is_connected():
                 self.serial_terminal.send_command(command + "\n")
-                self.serial_terminal._async_log_and_display(command)
             else:
                 print("Serial port not connected")
         except Exception as e:

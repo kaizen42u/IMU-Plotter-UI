@@ -3,9 +3,12 @@
 import threading
 import tkinter as tk
 from tkinter import ttk
-from typing import cast
+from typing import cast, TYPE_CHECKING
 
 from configManager import get_config_manager
+
+if TYPE_CHECKING:
+    from .serialTerminal import SerialTerminal
 
 # Load ESC configuration from config
 config = get_config_manager()
@@ -43,12 +46,18 @@ class ESCControlApp:
         },
     ]
 
-    def __init__(self, parent) -> None:
+    def __init__(self, parent: tk.Tk | tk.Frame, serial_terminal: "SerialTerminal") -> None:
         self.parent = parent
-        self.window: tk.Toplevel = tk.Toplevel(parent.master)
+        self.serial_terminal = serial_terminal
+        self.window: tk.Toplevel = tk.Toplevel(parent)
         self.window.title("ESC Control")
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
+
+        # Register connection state callback
+        self.serial_terminal.register_connection_state_callback(
+            self._on_connection_state_changed
+        )
 
         # Load number of ESCs from config or use default
         self.num_escs: int = config.get("esc.num_of_esc", 4)
@@ -135,6 +144,11 @@ class ESCControlApp:
 
         # Start background power monitor thread
         self._start_power_monitor_thread()
+
+    def _on_connection_state_changed(self) -> None:
+        """Callback when connection state changes."""
+        if self.window.winfo_exists():
+            self.update_connection_state()
 
     def _create_common_section(self, parent: tk.Frame) -> None:
         """Create a common settings section for all ESCs."""
@@ -295,26 +309,26 @@ class ESCControlApp:
             freq_str: str = self.frequency_combobox.get()
             freq_num = freq_str.replace("Hz", "")
             freq_command = f"esc freq {freq_num}"
-            self.parent.master.after(
+            self.window.after(
                 command_delay, lambda cmd=freq_command: self._send_command(cmd)
             )
             command_delay += 200
 
             init_command = f"esc {esc_id} init {gpio_num}"
-            self.parent.master.after(
+            self.window.after(
                 command_delay,
                 lambda cmd=init_command, idx=index: self._send_init_command(cmd, idx),
             )
             command_delay += 200
 
             dir_command = f"esc {esc_id} dir {direction_num}"
-            self.parent.master.after(
+            self.window.after(
                 command_delay, lambda cmd=dir_command: self._send_command(cmd)
             )
             command_delay += 200
 
             cali_command = f"esc {esc_id} cali {calib_values[0]} {calib_values[1]} {calib_values[2]} {calib_values[3]} {calib_values[4]}"
-            self.parent.master.after(
+            self.window.after(
                 command_delay,
                 lambda cmd=cali_command: self._send_command(cmd),
             )
@@ -323,7 +337,7 @@ class ESCControlApp:
             power_sequence = [0.00, -0.01, 0.00, 0.01, 0.00]
             for power_val in power_sequence:
                 pw_command = f"esc {esc_id} pw {power_val:.2f}"
-                self.parent.master.after(
+                self.window.after(
                     command_delay,
                     lambda cmd=pw_command: self._send_command(cmd),
                 )
@@ -352,7 +366,7 @@ class ESCControlApp:
                 continue
 
             deinit_command = f"esc {esc_id} deinit"
-            self.parent.master.after(
+            self.window.after(
                 command_delay,
                 lambda cmd=deinit_command, idx=index: self._send_deinit_command(
                     cmd, idx
@@ -406,7 +420,7 @@ class ESCControlApp:
 
     def update_connection_state(self) -> None:
         """Update ESC control button state based on serial connection."""
-        is_connected = self.parent.serial.is_connected()
+        is_connected = self.serial_terminal.serial.is_connected()
 
         selected_indices = [
             i for i in range(self.num_escs) if self.esc_selected[i].get()
@@ -470,13 +484,8 @@ class ESCControlApp:
             if not command.endswith("\n"):
                 command += "\n"
 
-            if self.parent.serial.is_connected():
-                self.parent.send_command(command)
-                threading.Thread(
-                    target=self.parent._async_log_and_display,
-                    args=(command,),
-                    daemon=True,
-                ).start()
+            if self.serial_terminal.serial.is_connected():
+                self.serial_terminal.send_command(command)
             else:
                 print("Serial port is not connected")
         except Exception as e:

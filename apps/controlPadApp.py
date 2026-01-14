@@ -19,13 +19,15 @@ class ControlPadApp:
     def __init__(
         self,
         parent,
+        serial_terminal,
         light_control_app: Optional["LightControlApp"] = None,
         esc_control_app: Optional["ESCControlApp"] = None,
     ) -> None:
         self.parent = parent
+        self.serial_terminal = serial_terminal
         self.light_control_app = light_control_app
         self.esc_control_app = esc_control_app
-        self.window: tk.Toplevel = tk.Toplevel(parent.master)
+        self.window: tk.Toplevel = tk.Toplevel(parent)
         self.window.title("Control Pad")
 
         # Dictionary to store custom power levels for each button/action
