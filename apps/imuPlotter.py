@@ -240,9 +240,6 @@ class IMUPlotter:
             command = f"bno085 init {tx_pin} {rx_pin}\n"
             self.serial_terminal.send_command(command)
             self.bno085_initialized = True
-            print(
-                f"BNO085 initialized with TX={self.bno085_tx_gpio}, RX={self.bno085_rx_gpio}"
-            )
         except Exception as e:
             print(f"Error initializing BNO085: {e}")
 
@@ -257,7 +254,6 @@ class IMUPlotter:
             command = "bno085 deinit\n"
             self.serial_terminal.send_command(command)
             self.bno085_initialized = False
-            print("BNO085 deinitialized")
         except Exception as e:
             print(f"Error deinitializing BNO085: {e}")
 
