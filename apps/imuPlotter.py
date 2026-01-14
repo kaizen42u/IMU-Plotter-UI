@@ -317,8 +317,8 @@ class IMUPlotter:
 
         # Rotate cube based on Euler angles (yaw, pitch, roll)
         yaw_rad = np.radians(self.current_yaw)
-        pitch_rad = np.radians(self.current_pitch)
-        roll_rad = np.radians(self.current_roll)
+        pitch_rad = np.radians(-self.current_pitch)  # Invert pitch for visual
+        roll_rad = np.radians(-self.current_roll)  # Invert roll for visual
 
         # Rotation matrices
         R_yaw = np.array(
