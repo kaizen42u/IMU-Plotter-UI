@@ -2,16 +2,17 @@ import threading
 import serial
 import serial.tools.list_ports
 from time import sleep
-from typing import Callable, Optional, List
+from typing import Callable, List
 
 
 class serialHandler:
     def __init__(
         self,
-        line_received_callback: Optional[Callable[[str], None]] = None,
-        log_callback: Optional[Callable[[str], None]] = None,
-        ports_changed_callback: Optional[Callable[[List[str]], None]] = None,
-        disconnect_callback: Optional[Callable[[str], None]] = None,
+        line_received_callback: Callable[[str], None] | None = None,
+        line_send_callback: Callable[[str], None] | None = None,
+        log_callback: Callable[[str], None] | None = None,
+        ports_changed_callback: Callable[[List[str]], None] | None = None,
+        disconnect_callback: Callable[[str], None] | None = None,
         interval: float = 0.05,
         baudrate: int = 115200,
     ):
@@ -19,21 +20,24 @@ class serialHandler:
         self._lock = threading.RLock()
         self._killed_event = threading.Event()
 
-        self.serial_port: Optional[serial.Serial] = None
-        self.connected_port: Optional[str] = (
+        self.serial_port: serial.Serial | None = None
+        self.connected_port: str | None = (
             None  # Track the connected port for disconnect callback
         )
         self.killed: bool = False
-        self.line_received_callback: Optional[Callable[[str], None]] = (
+        self.line_received_callback: Callable[[str], None] | None = (
             line_received_callback
         )
-        self.log_callback: Optional[Callable[[str], None]] = log_callback
-        self.ports_changed_callback: Optional[Callable[[List[str]], None]] = (
+        self.line_send_callback: Callable[[str], None] | None = (
+            line_send_callback
+        )
+        self.log_callback: Callable[[str], None] | None = log_callback
+        self.ports_changed_callback: Callable[[List[str]], None] | None = (
             ports_changed_callback
         )
-        self.disconnect_callback: Optional[Callable[[str], None]] = disconnect_callback
+        self.disconnect_callback: Callable[[str], None] | None = disconnect_callback
         self.current_ports: List[str] = self.get_ports()
-        self.read_serial_thread: Optional[threading.Thread] = None
+        self.read_serial_thread: threading.Thread | None = None
         self.interval = interval
         self.baudrate: int = baudrate
 
@@ -51,7 +55,7 @@ class serialHandler:
         ports = serial.tools.list_ports.comports()
         return [port.device for port in ports]
 
-    def connect(self, port: str, baudrate: Optional[int] = None) -> bool:
+    def connect(self, port: str, baudrate: int | None = None) -> bool:
         with self._lock:
             if self.is_connected():
                 self.log("Already connected. Disconnect first.")
@@ -100,6 +104,9 @@ class serialHandler:
             try:
                 self.serial_port.write(data.encode("utf-8"))
                 self.serial_port.flush()  # Flush immediately to avoid buffering delays
+                # Call line_send_callback if provided
+                if self.line_send_callback:
+                    self.line_send_callback(data)
                 return True
             except serial.SerialException as err:
                 self.log(f"Failed to send data: {err}")
@@ -155,6 +162,9 @@ class serialHandler:
     def set_line_received_callback(self, callback: Callable[[str], None]) -> None:
         self.line_received_callback = callback
 
+    def set_line_send_callback(self, callback: Callable[[str], None]) -> None:
+        self.line_send_callback = callback
+
     def set_log_callback(self, callback: Callable[[str], None]) -> None:
         self.log_callback = callback
 
@@ -162,7 +172,7 @@ class serialHandler:
         self.ports_changed_callback = callback
 
     def set_disconnect_callback(
-        self, callback: Optional[Callable[[str], None]]
+        self, callback: Callable[[str], None] | None
     ) -> None:
         self.disconnect_callback = callback
 
@@ -172,7 +182,7 @@ class serialHandler:
             new_ports = self.get_ports()
             callback = None
             port_disconnected = False
-            disconnected_port: Optional[str] = None
+            disconnected_port: str | None = None
 
             with self._lock:
                 if new_ports != self.current_ports:
@@ -207,7 +217,7 @@ def my_log(message: str) -> None:
     print(f"Log: {message}")
 
 
-def my_ports_changed(ports: Optional[List[str]]) -> None:
+def my_ports_changed(ports: List[str]) -> None:
     print(f"Ports changed: {ports}")
 
 
