@@ -52,7 +52,9 @@ class serialHandler:
             if baudrate is None:
                 baudrate = self.baudrate
             try:
-                self.serial_port = serial.Serial(port, baudrate=baudrate, timeout=self.timeout)
+                self.serial_port = serial.Serial(
+                    port, baudrate=baudrate, timeout=self.timeout
+                )
                 self.connected_port = port
                 self._killed_event.clear()
                 self.log(f"Port [{self.serial_port.name}] Connected")
@@ -159,9 +161,7 @@ class serialHandler:
     def set_ports_changed_callback(self, callback: Callable[[List[str]], None]) -> None:
         self.ports_changed_callback = callback
 
-    def set_disconnect_callback(
-        self, callback: Callable[[str], None] | None
-    ) -> None:
+    def set_disconnect_callback(self, callback: Callable[[str], None] | None) -> None:
         self.disconnect_callback = callback
 
     def monitor_ports(self) -> None:
