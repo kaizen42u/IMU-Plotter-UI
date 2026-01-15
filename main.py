@@ -23,7 +23,6 @@ imu_plotter_app: Optional[IMUPlotter] = None
 
 
 def toggle_window(
-    app_ref: dict,
     app_key: str,
     create_func,
     post_create_func=None,
@@ -32,12 +31,12 @@ def toggle_window(
     """Generic window toggle function to reduce duplication.
     
     Args:
-        app_ref: Dictionary holding app references (globals())
-        app_key: Key to access app in app_ref
+        app_key: Key to access app in globals()
         create_func: Function to create the app
         post_create_func: Optional function to call after app creation
         post_toggle_func: Optional function to call when toggling existing app
     """
+    app_ref = globals()
     app = app_ref.get(app_key)
     
     if app is None or not app.window.winfo_exists():
@@ -80,7 +79,7 @@ def toggle_esc_control(serial_terminal: SerialTerminal):
         if control_pad_app is not None:
             control_pad_app.set_esc_control_app(app)
 
-    toggle_window(globals(), "esc_control_app", create_esc, post_create, post_toggle)
+    toggle_window("esc_control_app", create_esc, post_create, post_toggle)
 
 
 def toggle_light_control(serial_terminal: SerialTerminal):
@@ -98,7 +97,7 @@ def toggle_light_control(serial_terminal: SerialTerminal):
         if control_pad_app is not None:
             control_pad_app.set_light_control_app(app)
 
-    toggle_window(globals(), "light_control_app", create_light, post_create, post_toggle)
+    toggle_window("light_control_app", create_light, post_create, post_toggle)
 
 
 def toggle_control_pad(serial_terminal: SerialTerminal):
@@ -117,7 +116,7 @@ def toggle_control_pad(serial_terminal: SerialTerminal):
         app.set_light_control_app(light_control_app)
         app.set_esc_control_app(esc_control_app)
 
-    toggle_window(globals(), "control_pad_app", create_pad, None, post_toggle)
+    toggle_window("control_pad_app", create_pad, None, post_toggle)
 
 
 def toggle_imu_plotter(serial_terminal: SerialTerminal):
@@ -147,7 +146,7 @@ def toggle_imu_plotter(serial_terminal: SerialTerminal):
         
         return IMUPlotterWrapper(imu_plotter_window)
 
-    toggle_window(globals(), "imu_plotter_window", create_imu)
+    toggle_window("imu_plotter_window", create_imu)
 
 
 def toggle_vc288(serial_terminal: SerialTerminal):
@@ -157,7 +156,7 @@ def toggle_vc288(serial_terminal: SerialTerminal):
     def create_vc288():
         return VC288App(parent=serial_terminal)
 
-    toggle_window(globals(), "vc288_app", create_vc288)
+    toggle_window("vc288_app", create_vc288)
 
 
 def toggle_leakage(serial_terminal: SerialTerminal):
@@ -167,7 +166,7 @@ def toggle_leakage(serial_terminal: SerialTerminal):
     def create_leakage():
         return LeakageApp(parent=serial_terminal)
 
-    toggle_window(globals(), "leakage_app", create_leakage)
+    toggle_window("leakage_app", create_leakage)
 
 
 def update_control_apps_state():
