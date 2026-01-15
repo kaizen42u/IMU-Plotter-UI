@@ -143,6 +143,10 @@ def toggle_imu_plotter(serial_terminal: SerialTerminal):
         class IMUPlotterWrapper:
             def __init__(self, window):
                 self.window = window
+            
+            def destroy(self):
+                """Destroy the window."""
+                self.window.destroy()
         
         return IMUPlotterWrapper(imu_plotter_window)
 
