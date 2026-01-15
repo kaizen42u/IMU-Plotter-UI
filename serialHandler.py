@@ -8,8 +8,8 @@ from typing import Callable, List
 class serialHandler:
     def __init__(
         self,
-        interval: float = 0.05,
         baudrate: int = 115200,
+        timeout: float = 0.1,
     ):
         # Initialize thread-safe locks first
         self._lock = threading.RLock()
@@ -27,8 +27,8 @@ class serialHandler:
         self.disconnect_callback: Callable[[str], None] | None = None
         self.current_ports: List[str] = self.get_ports()
         self.read_serial_thread: threading.Thread | None = None
-        self.interval = interval
         self.baudrate: int = baudrate
+        self.timeout: float = timeout
 
         # Start threads after all attributes are initialized
         self.port_monitor_thread = threading.Thread(
@@ -52,7 +52,7 @@ class serialHandler:
             if baudrate is None:
                 baudrate = self.baudrate
             try:
-                self.serial_port = serial.Serial(port, baudrate=baudrate, timeout=0.1)
+                self.serial_port = serial.Serial(port, baudrate=baudrate, timeout=self.timeout)
                 self.connected_port = port
                 self._killed_event.clear()
                 self.log(f"Port [{self.serial_port.name}] Connected")
@@ -108,6 +108,7 @@ class serialHandler:
     def read_from_port(self) -> None:
         try:
             while not self._killed_event.is_set():
+                line = None
                 with self._lock:
                     if not self.is_connected() or self.serial_port is None:
                         break
@@ -127,8 +128,6 @@ class serialHandler:
                             self.line_received_callback(reading)
                     except UnicodeDecodeError as err:
                         self.log(f"Bad serial data: {err}")
-                else:
-                    sleep(self.interval)
 
             print("Serial port read thread exiting")
         except Exception as err:
