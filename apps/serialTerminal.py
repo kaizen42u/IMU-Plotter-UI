@@ -1,23 +1,15 @@
-"""Serial Terminal module for IMU Plotter."""
-
 import threading
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from typing import List, Callable
-import sys
-
-# Add parent directory to path to import configManager
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from queue import Queue
 
 from configManager import get_config_manager
 from serialHandler import serialHandler
 from ansiEncoding import ANSI
 from tkAutocompleteCombobox import tkAutocompleteCombobox
 from tkTerminal import tkTerminal
-
-import serial
-
 
 # Load terminal settings from config
 config = get_config_manager()
@@ -44,6 +36,8 @@ class SerialTerminal:
         self.logging_enabled: bool = False
         self.log_file_path: Path | None = None
         self.log_file_handle = None
+        self.log_queue: Queue = Queue()
+        self.log_writer_thread: threading.Thread | None = None
 
         # Event filtering variables
         self.show_events: bool = True
@@ -286,6 +280,13 @@ class SerialTerminal:
 
             self.log_file_handle = open(self.log_file_path, "w")
             self.logging_enabled = True
+
+            # Start the dedicated writer thread
+            self.log_writer_thread = threading.Thread(
+                target=self._log_writer_thread, daemon=True
+            )
+            self.log_writer_thread.start()
+
             self.show_message(
                 f"{ANSI.bGreen}Logging started: {self.log_file_path}{ANSI.default}"
             )
@@ -296,17 +297,26 @@ class SerialTerminal:
     def stop_logging(self) -> None:
         """Stop logging and close log file."""
         try:
+            if self.logging_enabled:
+                self.logging_enabled = False
+                # Signal the writer thread to stop by putting None in queue
+                self.log_queue.put(None)
+
+                # Wait for writer thread to finish
+                if self.log_writer_thread and self.log_writer_thread.is_alive():
+                    self.log_writer_thread.join(timeout=2)
+
             if self.log_file_handle:
                 self.log_file_handle.close()
-            self.logging_enabled = False
-            self.log_file_handle = None
+                self.log_file_handle = None
+
             self.show_message(f"{ANSI.bGreen}Logging stopped{ANSI.default}")
         except Exception as e:
             self.show_message(f"{ANSI.bRed}Failed to stop logging: {e}{ANSI.default}")
 
-    def write_log(self, data: str, direction: str) -> None:
+    def write_log(self, direction: str, data: str) -> None:
         """Write data to session log. direction should be 'tx' or 'rx'."""
-        if not self.logging_enabled or not self.log_file_handle:
+        if not self.logging_enabled:
             return
 
         try:
@@ -317,10 +327,31 @@ class SerialTerminal:
             clean_data = data.rstrip("\n\r")
 
             log_line = f"({timestamp}.{ms:03d})({direction}) | {clean_data}\n"
-            self.log_file_handle.write(log_line)
-            self.log_file_handle.flush()
+            # Put the log line in the queue for the writer thread to process
+            self.log_queue.put(log_line)
         except Exception as e:
-            print(f"[W] Error writing to log: {e}")
+            print(f"[W] Error queueing log: {e}")
+
+    def _log_writer_thread(self) -> None:
+        """Dedicated thread for writing logs to file."""
+        try:
+            while self.logging_enabled:
+                try:
+                    # Block with timeout to allow graceful shutdown
+                    log_line = self.log_queue.get(timeout=1)
+
+                    # None is the sentinel value to stop the thread
+                    if log_line is None:
+                        break
+
+                    if self.log_file_handle:
+                        self.log_file_handle.write(log_line)
+                        self.log_file_handle.flush()
+                except:
+                    # Timeout or other queue error, continue waiting
+                    continue
+        except Exception as e:
+            print(f"[W] Error in log writer thread: {e}")
 
     def close(self) -> None:
         self._save_serial_config()
@@ -362,11 +393,9 @@ class SerialTerminal:
             except Exception as e:
                 print(f"Error in line received callback: {e}")
 
-        # Log asynchronously
+        # Log asynchronously to queue (writer thread handles it)
         if self.logging_enabled:
-            threading.Thread(
-                target=self.write_log, args=(line, " R"), daemon=True
-            ).start()
+            self.write_log(" R", line)
 
     def serial_log(self, message: str) -> None:
         self.show_message(message)
@@ -452,23 +481,19 @@ class SerialTerminal:
             print("Auto-reconnect enabled")
         except ValueError:
             self.show_message(f"Invalid baudrate: {self.baudrate_combobox.get()}")
-        except serial.SerialException as e:
-            self.show_message(
-                f"Could not open port [{self.port_selection_combobox.get()}]: {e}"
-            )
 
     def send_command(self, command: str | None = None) -> bool:
         """Send a command over the serial port.
-        
+
         Args:
             command: Command to send. If None, uses command from entry field.
-            
+
         Returns:
             True if command was sent successfully, False otherwise.
         """
         # Track if called from UI
         from_ui = command is None
-        
+
         # If no command provided, get from entry field
         if from_ui:
             command = self.send_command_entry.get()
@@ -499,18 +524,25 @@ class SerialTerminal:
         success = self.serial.send(command)
 
         if success:
-            threading.Thread(
-                target=self._async_log_and_display, args=(command,), daemon=True
-            ).start()
-        
+            if self.logging_enabled:
+                self.write_log("T ", command)
+            self.master.after(
+                0,
+                lambda: self.show_message(
+                    f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}"
+                ),
+            )
+
         # Update UI only if called from UI
         if from_ui:
             if success:
                 # Keep the text in the entry and select it for easy re-sending
                 self.send_command_entry.select_range(0, tk.END)
             else:
-                self.show_message(f"{ANSI.bRed}Error: Failed to send command{ANSI.default}")
-        
+                self.show_message(
+                    f"{ANSI.bRed}Error: Failed to send command{ANSI.default}"
+                )
+
         return success
 
     def _history_previous(self) -> None:
@@ -557,18 +589,6 @@ class SerialTerminal:
 
         self.send_command_entry.select_range(0, tk.END)
         self.send_command_entry.focus()
-
-    def _async_log_and_display(self, command: str) -> None:
-        try:
-            self.write_log(command, "T ")
-            self.master.after(
-                0,
-                lambda: self.show_message(
-                    f"{ANSI.bGreen}> {command.rstrip()}{ANSI.default}"
-                ),
-            )
-        except Exception as e:
-            print(f"[W] Error in async_log_and_display: {e}")
 
     def _process_event_line(self, line: str) -> None:
         """Parse an event line and call registered event callbacks.
