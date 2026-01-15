@@ -8,11 +8,6 @@ from typing import Callable, List
 class serialHandler:
     def __init__(
         self,
-        line_received_callback: Callable[[str], None] | None = None,
-        line_send_callback: Callable[[str], None] | None = None,
-        log_callback: Callable[[str], None] | None = None,
-        ports_changed_callback: Callable[[List[str]], None] | None = None,
-        disconnect_callback: Callable[[str], None] | None = None,
         interval: float = 0.05,
         baudrate: int = 115200,
     ):
@@ -25,17 +20,11 @@ class serialHandler:
             None  # Track the connected port for disconnect callback
         )
         self.killed: bool = False
-        self.line_received_callback: Callable[[str], None] | None = (
-            line_received_callback
-        )
-        self.line_send_callback: Callable[[str], None] | None = (
-            line_send_callback
-        )
-        self.log_callback: Callable[[str], None] | None = log_callback
-        self.ports_changed_callback: Callable[[List[str]], None] | None = (
-            ports_changed_callback
-        )
-        self.disconnect_callback: Callable[[str], None] | None = disconnect_callback
+        self.line_received_callback: Callable[[str], None] | None = None
+        self.line_send_callback: Callable[[str], None] | None = None
+        self.log_callback: Callable[[str], None] | None = None
+        self.ports_changed_callback: Callable[[List[str]], None] | None = None
+        self.disconnect_callback: Callable[[str], None] | None = None
         self.current_ports: List[str] = self.get_ports()
         self.read_serial_thread: threading.Thread | None = None
         self.interval = interval
