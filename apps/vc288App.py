@@ -1,9 +1,9 @@
 """VC288 Voltage/Current Sensor application module."""
 
 import tkinter as tk
-from tkinter import ttk
 
 from configManager import get_config_manager
+from tkGPIOCombobox import tkGPIOCombobox
 
 # Load VC288 configuration from config
 config = get_config_manager()
@@ -11,10 +11,6 @@ config = get_config_manager()
 
 class VC288App:
     """Application for VC288 voltage/current sensor monitoring."""
-
-    GPIO_OPTIONS: list[str] = [f"GPIO{i}" for i in range(22)] + [
-        f"GPIO{i}" for i in range(26, 49)
-    ]
 
     def __init__(self, parent) -> None:
         self.parent = parent
@@ -80,10 +76,8 @@ class VC288App:
         gpio_label: tk.Label = tk.Label(master=gpio_frame, text="GPIO:", anchor="w")
         gpio_label.pack(side=tk.LEFT, padx=2)
 
-        self.gpio_combobox: ttk.Combobox = ttk.Combobox(
+        self.gpio_combobox: tkGPIOCombobox = tkGPIOCombobox(
             master=gpio_frame,
-            values=self.GPIO_OPTIONS,
-            state="readonly",
             width=12,
         )
         self.gpio_combobox.set(self.vc288_gpio)
@@ -293,9 +287,6 @@ class VC288App:
             config.set("vc288.current_offset", self.vc288_current_offset)
             config.set("vc288.current_x2", self.vc288_current_x2)
             config.save()
-            print(
-                f"[DEBUG] Saved VC288 config: GPIO={self.gpio_combobox.get()}, V_slope={self.vc288_voltage_slope}, V_offset={self.vc288_voltage_offset}, V_x2={self.vc288_voltage_x2}, A_slope={self.vc288_current_slope}, A_offset={self.vc288_current_offset}, A_x2={self.vc288_current_x2}"
-            )
         except Exception as e:
             print(f"Error saving VC288 config: {e}")
 
@@ -305,10 +296,12 @@ class VC288App:
             print("Error: GPIO combobox is not initialized")
             return
 
-        gpio_str: str = self.gpio_combobox.get()
-        gpio_num = int(gpio_str.replace("GPIO", ""))
+        gpio = self.gpio_combobox.get()
+        if gpio is None:
+            print("Error: Invalid GPIO selection")
+            return
 
-        init_command = f"vc288 init {gpio_num}"
+        init_command = f"vc288 init {gpio}"
         self.parent.master.after(0, lambda cmd=init_command: self._send_command(cmd))
 
         self.vc288_initialized = True

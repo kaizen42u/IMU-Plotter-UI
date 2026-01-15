@@ -135,7 +135,7 @@
     "graph_time_span_ms": 3000
   },
   "vc288": {
-    "gpio": "GPIO13",
+    "gpio": 13,
     "voltage_offset": 0.87,
     "current_offset": 0.021366,
     "voltage_slope": 0.984,
