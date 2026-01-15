@@ -7,7 +7,6 @@ from typing import cast, TYPE_CHECKING
 
 from configManager import get_config_manager
 from tkGPIOCombobox import tkGPIOCombobox
-from esp32_hw import GPIO
 
 if TYPE_CHECKING:
     from .serialTerminal import SerialTerminal
