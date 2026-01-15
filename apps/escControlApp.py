@@ -6,6 +6,8 @@ from tkinter import ttk
 from typing import cast, TYPE_CHECKING
 
 from configManager import get_config_manager
+from tkGPIOCombobox import tkGPIOCombobox
+from esp32_hw import GPIO
 
 if TYPE_CHECKING:
     from .serialTerminal import SerialTerminal
@@ -17,34 +19,8 @@ config = get_config_manager()
 class ESCControlApp:
     """Application for controlling Electronic Speed Controllers."""
 
-    GPIO_OPTIONS: list[str] = [f"GPIO{i}" for i in range(22)] + [
-        f"GPIO{i}" for i in range(26, 49)
-    ]
     FREQUENCY_OPTIONS: list[str] = ["50Hz", "100Hz", "200Hz", "300Hz"]
     DIRECTION_OPTIONS: list[str] = ["Normal", "Inverted"]
-
-    DEFAULT_ESC_CONFIG: list[dict[str, str | list[int]]] = [
-        {
-            "gpio": "GPIO9",
-            "direction": "Normal",
-            "calibration": [1000, 1442, 1500, 1586, 2000],
-        },
-        {
-            "gpio": "GPIO10",
-            "direction": "Inverted",
-            "calibration": [1000, 1444, 1500, 1551, 2000],
-        },
-        {
-            "gpio": "GPIO11",
-            "direction": "Normal",
-            "calibration": [1000, 1440, 1500, 1556, 2000],
-        },
-        {
-            "gpio": "GPIO12",
-            "direction": "Inverted",
-            "calibration": [1000, 1492, 1500, 1514, 2000],
-        },
-    ]
 
     def __init__(self, parent: tk.Tk | tk.Frame, serial_terminal: "SerialTerminal") -> None:
         self.parent = parent
@@ -69,23 +45,20 @@ class ESCControlApp:
             if esc_cfg:
                 self.esc_configs.append(esc_cfg)
             else:
-                if i - 1 < len(self.DEFAULT_ESC_CONFIG):
-                    self.esc_configs.append(self.DEFAULT_ESC_CONFIG[i - 1].copy())
-                else:
-                    # Create a default config for ESCs beyond the defaults
-                    self.esc_configs.append(
-                        {
-                            "gpio": f"GPIO{8 + i}",
-                            "direction": "Normal",
-                            "calibration": [1000, 1500, 1500, 1500, 2000],
-                        }
-                    )
+                # Create a default config for each ESC
+                self.esc_configs.append(
+                    {
+                        "gpio": f"{8 + i}",
+                        "direction": "Normal",
+                        "calibration": [1000, 1500, 1500, 1500, 2000],
+                    }
+                )
 
         # Load ESC frequency from config
         self.esc_frequency = config.get("esc.frequency", "300Hz")
 
         # Initialize lists based on number of ESCs
-        self.esc_gpio_comboboxes: list[ttk.Combobox | None] = [None] * self.num_escs
+        self.esc_gpio_comboboxes: list[tkGPIOCombobox | None] = [None] * self.num_escs
         self.esc_direction_comboboxes: list[ttk.Combobox | None] = [
             None
         ] * self.num_escs
@@ -228,9 +201,10 @@ class ESCControlApp:
 
                 # Get current values from UI
                 if self.esc_gpio_comboboxes[index] is not None:
-                    gpio = cast(ttk.Combobox, self.esc_gpio_comboboxes[index]).get()
+                    gpio_box = cast(tkGPIOCombobox, self.esc_gpio_comboboxes[index])
+                    gpio = gpio_box.get()
                 else:
-                    gpio = self.esc_configs[index].get("gpio", f"GPIO{9 + index}")
+                    gpio = self.esc_configs[index].get("gpio", f"{9 + index}")
 
                 if self.esc_direction_comboboxes[index] is not None:
                     direction = cast(
@@ -282,16 +256,15 @@ class ESCControlApp:
             if self.esc_gpio_comboboxes[index] is None:
                 continue
 
-            gpio_combobox: ttk.Combobox = cast(
-                ttk.Combobox, self.esc_gpio_comboboxes[index]
-            )
             direction_combobox: ttk.Combobox = cast(
                 ttk.Combobox, self.esc_direction_comboboxes[index]
             )
-            gpio_str: str = gpio_combobox.get()
+            gpio_combobox: tkGPIOCombobox = cast(
+                tkGPIOCombobox, self.esc_gpio_comboboxes[index]
+            )
+            gpio = gpio_combobox.get()
+            gpio_str = str(gpio) if gpio else ""
             direction_str: str = direction_combobox.get()
-
-            gpio_num = int(gpio_str.replace("GPIO", ""))
             direction_num = 0 if direction_str == "Normal" else 1
 
             if hasattr(self, "esc_calibration_entries") and index < len(
@@ -304,7 +277,9 @@ class ESCControlApp:
                     print(f"Error: Invalid calibration values for ESC {esc_id}")
                     continue
             else:
-                calib_values = self.DEFAULT_ESC_CONFIG[index]["calibration"]
+                calib_values = self.esc_configs[index].get(
+                    "calibration", [1000, 1500, 1500, 1500, 2000]
+                )
 
             freq_str: str = self.frequency_combobox.get()
             freq_num = freq_str.replace("Hz", "")
@@ -314,7 +289,7 @@ class ESCControlApp:
             )
             command_delay += 200
 
-            init_command = f"esc {esc_id} init {gpio_num}"
+            init_command = f"esc {esc_id} init {gpio_str}"
             self.window.after(
                 command_delay,
                 lambda cmd=init_command, idx=index: self._send_init_command(cmd, idx),
@@ -388,7 +363,7 @@ class ESCControlApp:
         is_initialized = self.esc_initialized[index]
 
         if self.esc_gpio_comboboxes[index] is not None:
-            gpio_box: ttk.Combobox = cast(ttk.Combobox, self.esc_gpio_comboboxes[index])
+            gpio_box: tkGPIOCombobox = cast(tkGPIOCombobox, self.esc_gpio_comboboxes[index])
             gpio_box.config(state="disabled" if is_initialized else "readonly")
 
         if self.esc_direction_comboboxes[index] is not None:
@@ -562,13 +537,13 @@ class ESCControlApp:
         gpio_label: tk.Label = tk.Label(master=gpio_frame, text="GPIO:", anchor="w")
         gpio_label.pack(side=tk.LEFT, padx=2)
 
-        gpio_combobox: ttk.Combobox = ttk.Combobox(
+        gpio_combobox: tkGPIOCombobox = tkGPIOCombobox(
             master=gpio_frame,
-            values=self.GPIO_OPTIONS,
-            state="readonly",
             width=12,
         )
-        gpio_combobox.set(self.esc_configs[index].get("gpio", f"GPIO{9 + index}"))
+        gpio = self.esc_configs[index].get("gpio", f"GPIO{9 + index}")
+        if isinstance(gpio, str):
+            gpio_combobox.set(gpio)
         gpio_combobox.pack(side=tk.LEFT, padx=2)
 
         direction_frame: tk.Frame = tk.Frame(master=config_frame)
