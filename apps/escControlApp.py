@@ -7,6 +7,7 @@ from typing import cast, TYPE_CHECKING
 
 from configManager import get_config_manager
 from tkGPIOCombobox import tkGPIOCombobox
+from esp32_hw import ESP32S3, GPIO
 
 if TYPE_CHECKING:
     from .serialTerminal import SerialTerminal
@@ -201,7 +202,7 @@ class ESCControlApp:
                 # Get current values from UI
                 if self.esc_gpio_comboboxes[index] is not None:
                     gpio_box = cast(tkGPIOCombobox, self.esc_gpio_comboboxes[index])
-                    gpio = gpio_box.get()
+                    gpio = ESP32S3.get_gpio_name(gpio_box.get())
                 else:
                     gpio = self.esc_configs[index].get("gpio", f"{9 + index}")
 

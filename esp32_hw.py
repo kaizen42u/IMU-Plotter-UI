@@ -10,12 +10,12 @@ class ESP32S3:
     """ESP32-S3 hardware specifications and GPIO definitions."""
 
     # ESP32-S3 has GPIO 0-21, 26-48 available for general use
-    GPIO_PINS: list[GPIO] = [GPIO(i) for i in range(22)] + [
+    AVAILABLE_GPIO_PINS: list[GPIO] = [GPIO(i) for i in range(22)] + [
         GPIO(i) for i in range(26, 49)
     ]
 
     # Special pins with warnings about their intended usage
-    SPECIAL_PINS: dict[GPIO, str] = {
+    GPIO_RESERVED_PINS: dict[GPIO, str] = {
         GPIO(0): "Strapping pin - Boot mode selection (pull-up recommended)",
         GPIO(3): "Strapping pin - JTAG enable (floating/pull-up recommended)",
         GPIO(19): "USB D- - USB OTG peripheral",
@@ -39,35 +39,37 @@ class ESP32S3:
     }
 
     @classmethod
-    def is_special_pin(cls, gpio: GPIO) -> bool:
+    def is_gpio_reserved(cls, gpio: GPIO) -> bool:
         """Check if a GPIO pin has special functions."""
-        return gpio in cls.SPECIAL_PINS
+        return gpio in cls.GPIO_RESERVED_PINS
 
     @classmethod
-    def get_pin_warning(cls, gpio: GPIO) -> str | None:
+    def get_gpio_warning(cls, gpio: GPIO) -> str | None:
         """Get warning message for special GPIO pins."""
-        return cls.SPECIAL_PINS.get(gpio)
+        return cls.GPIO_RESERVED_PINS.get(gpio)
 
     @classmethod
-    def is_valid_gpio(cls, gpio_num: GPIO) -> bool:
+    def is_valid_gpio_pin(cls, gpio: GPIO) -> bool:
         """Check if a GPIO number is valid on ESP32."""
-        return gpio_num in cls.GPIO_PINS
+        return gpio in cls.AVAILABLE_GPIO_PINS
 
     @classmethod
-    def name(cls, gpio_num: GPIO) -> str:
-        if isinstance(gpio_num, int):
-            gpio_num = GPIO(gpio_num)
-            return f"GPIO{gpio_num}"
+    def get_gpio_name(cls, gpio: GPIO | None) -> str:
+        if isinstance(gpio, int):
+            gpio = GPIO(gpio)
+            return f"GPIO{gpio}"
         return "Unknown GPIO"
     
     @classmethod
-    def to_gpio(cls, gpio_str: str) -> GPIO | None:
+    def get_gpio_from_name_str(cls, gpio_str: str) -> GPIO | None:
         """Convert a string like 'GPIO12' to GPIO type."""
+        # gpio_str need to be to upper case to match "GPIO"
+        gpio_str = gpio_str.upper()
         if gpio_str.startswith("GPIO"):
             try:
                 num = int(gpio_str[4:])
                 gpio = GPIO(num)
-                if cls.is_valid_gpio(gpio):
+                if cls.is_valid_gpio_pin(gpio):
                     return gpio
             except ValueError:
                 return None
