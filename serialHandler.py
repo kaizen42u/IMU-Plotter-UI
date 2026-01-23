@@ -130,7 +130,8 @@ class serialHandler:
                             self.line_received_callback(reading)
                     except UnicodeDecodeError as err:
                         self.log(f"Bad serial data: {err}")
-
+                else:
+                    sleep(self.timeout)
             print("Serial port read thread exiting")
         except Exception as err:
             self.log(f"Fatal error in read thread: {err}")
