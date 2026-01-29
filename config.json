@@ -136,12 +136,12 @@
   },
   "vc288": {
     "gpio": 13,
-    "voltage_offset": 0.87,
-    "current_offset": 0.021366,
-    "voltage_slope": 0.984,
-    "current_slope": 0.869129,
+    "voltage_offset": 0.671573,
+    "current_offset": 0.009699,
+    "voltage_slope": 0.989902,
+    "current_slope": 0.894491,
     "voltage_x2": 0.0,
-    "current_x2": -0.019863425
+    "current_x2": 0.0
   },
   "bno085": {
     "tx_gpio": "GPIO5",
