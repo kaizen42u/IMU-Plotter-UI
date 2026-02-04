@@ -46,12 +46,6 @@ class IMUPlotter:
         self.current_pitch: float = 0.0
         self.current_roll: float = 0.0
 
-        # Store angle offsets for nulling
-        self.yaw_offset: float = 0.0
-        self.pitch_offset: float = 0.0
-        self.roll_offset: float = 0.0
-        self.nulling_enabled: bool = False
-
         # Load BNO085 configuration
         config = get_config_manager()
         self.bno085_tx_gpio = config.get("bno085.tx_gpio", "GPIO5")
@@ -167,7 +161,7 @@ class IMUPlotter:
         self.offset_all_button = tk.Button(
             master=self.offset_frame,
             text="Null Offsets",
-            command=self.offset_all,
+            command=lambda: self.send_offset_command("all"),
         )
         self.offset_all_button.config(width=20)
         self.offset_all_button.grid(row=0, column=0, padx=2, pady=2)
@@ -176,7 +170,7 @@ class IMUPlotter:
         self.offset_yaw_button = tk.Button(
             master=self.offset_frame,
             text="Null Offsets (Yaw)",
-            command=self.offset_yaw,
+            command=lambda: self.send_offset_command("yaw"),
         )
         self.offset_yaw_button.config(width=20)
         self.offset_yaw_button.grid(row=1, column=0, padx=2, pady=2)
@@ -185,7 +179,7 @@ class IMUPlotter:
         self.offset_clear_button = tk.Button(
             master=self.offset_frame,
             text="Clear Offsets",
-            command=self.offset_clear,
+            command=lambda: self.send_offset_command("clear"),
         )
         self.offset_clear_button.config(width=20)
         self.offset_clear_button.grid(row=2, column=0, padx=2, pady=2)
@@ -524,25 +518,20 @@ class IMUPlotter:
             return
         
         command = f"bno085 tare {axes}"
-        self.serial_terminal.send_command_entry.delete(0, tk.END)
-        self.serial_terminal.send_command_entry.insert(0, command)
-        self.serial_terminal.send_command()
+        self.serial_terminal.send_command(command)
 
-    def offset_all(self) -> None:
-        """Save current angles as offsets for all axes."""
-        self.yaw_offset = self.yaw_offset + self.current_yaw
-        self.pitch_offset = self.pitch_offset + self.current_pitch
-        self.roll_offset = self.roll_offset + self.current_roll
+    def send_offset_command(self, mode: str) -> None:
+        """Send offset command to BNO085 sensor.
 
-    def offset_yaw(self) -> None:
-        """Save current yaw as offset for yaw axis only."""
-        self.yaw_offset = self.yaw_offset + self.current_yaw
+        Args:
+            mode: Offset mode - 'all', 'yaw', or 'clear'
+        """
+        if not self.bno085_initialized:
+            print("BNO085 not initialized. Please initialize first.")
+            return
 
-    def offset_clear(self) -> None:
-        """Clear all offsets (set to 0)."""
-        self.yaw_offset = 0.0
-        self.pitch_offset = 0.0
-        self.roll_offset = 0.0
+        command = f"bno085 offset {mode}"
+        self.serial_terminal.send_command(command)
 
     def on_rotation_vector_event(self, timestamp: str, data: str) -> None:
         """Callback for rotation vector event (0x10).
@@ -558,10 +547,10 @@ class IMUPlotter:
                 pitch = float(values[1])
                 roll = float(values[2])
 
-                # Update Euler angles for 3D visualization (apply offset)
-                self.current_yaw = yaw - self.yaw_offset
-                self.current_pitch = pitch - self.pitch_offset
-                self.current_roll = roll - self.roll_offset
+                # Update Euler angles for 3D visualization
+                self.current_yaw = yaw
+                self.current_pitch = pitch
+                self.current_roll = roll
 
                 # Extract timestamp in milliseconds
                 try:
