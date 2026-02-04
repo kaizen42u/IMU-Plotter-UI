@@ -1,3 +1,4 @@
+import re
 import threading
 import tkinter as tk
 from datetime import datetime
@@ -372,8 +373,15 @@ class SerialTerminal:
             print(f"Error saving serial config: {e}")
 
     def serial_line_received(self, line: str) -> None:
+        # Normalize line for event parsing (strip ANSI, handle repl> prefix)
+        normalized_line = self._strip_ansi(line).strip()
+        if normalized_line.startswith("repl> "):
+            normalized_line = normalized_line[6:].lstrip()
+
         # Check if line is an event line
-        is_event_line = line.strip().startswith("[EVENT")
+        is_event_line = normalized_line.startswith("\x1b[97m[EVENT") or normalized_line.startswith(
+            "[EVENT "
+        )
 
         # Only display if not an event line, or if showing events
         if not is_event_line or self.show_events:
@@ -382,9 +390,9 @@ class SerialTerminal:
 
         # Store event lines for later toggling
         if is_event_line:
-            self.event_lines.append(line)
+            self.event_lines.append(normalized_line)
             # Parse event and call registered callbacks
-            self._process_event_line(line)
+            self._process_event_line(normalized_line)
 
         # Call all registered callbacks
         for callback in self._line_received_callbacks:
@@ -598,8 +606,10 @@ class SerialTerminal:
         Supports both decimal and hex event IDs (e.g., "60" or "0x60")
         """
         try:
-            # Remove leading/trailing whitespace
-            line = line.strip()
+            # Remove ANSI codes, leading/trailing whitespace and normalize repl> prefix
+            line = self._strip_ansi(line).strip()
+            if line.startswith("repl> "):
+                line = line[6:].lstrip()
 
             # Check if line matches event format
             if not line.startswith("[EVENT "):
@@ -668,3 +678,8 @@ class SerialTerminal:
     def show_message(self, message: str) -> None:
         self.terminal.write(f"{ANSI.bBrightMagenta}{message}{ANSI.default}\n")
         print(message)
+
+    @staticmethod
+    def _strip_ansi(text: str) -> str:
+        """Remove ANSI escape sequences from text."""
+        return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
