@@ -1,0 +1,154 @@
+{
+  "serial": {
+    "port": "/dev/ttyUSB0",
+    "baudrate": 921600,
+    "timeout": 1.0,
+    "auto_scroll": true,
+    "logging_enabled": false,
+    "terminal_max_width": 400
+  },
+  "esc": {
+    "num_of_esc": 4,
+    "frequency": "300Hz",
+    "esc1": {
+      "gpio": "GPIO9",
+      "direction": "Inverted",
+      "calibration": [
+        1000,
+        1477,
+        1500,
+        1520,
+        2000
+      ]
+    },
+    "esc2": {
+      "gpio": "GPIO10",
+      "direction": "Inverted",
+      "calibration": [
+        1000,
+        1492,
+        1500,
+        1537,
+        2000
+      ]
+    },
+    "esc3": {
+      "gpio": "GPIO11",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1478,
+        1500,
+        1534,
+        2000
+      ]
+    },
+    "esc4": {
+      "gpio": "GPIO12",
+      "direction": "Inverted",
+      "calibration": [
+        1000,
+        1492,
+        1500,
+        1514,
+        2000
+      ]
+    },
+    "esc5": {
+      "gpio": "GPIO13",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ]
+    }
+  },
+  "light": {
+    "gpio": "GPIO14",
+    "frequency": "44100Hz",
+    "gamma": "2.3"
+  },
+  "control_pad": {
+    "forward": [
+      0.5,
+      -0.5,
+      0.0,
+      0.2
+    ],
+    "backward": [
+      -0.5,
+      0.5,
+      0.0,
+      -0.3
+    ],
+    "rotate_left": [
+      0.15,
+      0.15,
+      -0.3,
+      -0.05
+    ],
+    "rotate_right": [
+      0.0,
+      0.0,
+      0.75,
+      -0.05
+    ],
+    "up": [
+      -0.35,
+      -0.35,
+      0.0,
+      0.0
+    ],
+    "down": [
+      0.15,
+      0.15,
+      0.0,
+      0.0
+    ],
+    "roll_left": [
+      -0.5,
+      0.5,
+      0.0,
+      0.0
+    ],
+    "roll_right": [
+      0.5,
+      -0.5,
+      0.0,
+      0.0
+    ],
+    "stop": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "imu": {
+    "graph_max_samples": 0,
+    "graph_accel_y_limit": 16,
+    "graph_gyro_y_limit": 200,
+    "draw_graph_interval": 0.01,
+    "graph_time_span_ms": 3000
+  },
+  "vc288": {
+    "gpio": 13,
+    "voltage_offset": 0.671573,
+    "current_offset": 0.009699,
+    "voltage_slope": 0.989902,
+    "current_slope": 0.894491,
+    "voltage_x2": 0.0,
+    "current_x2": 0.0
+  },
+  "bno085": {
+    "tx_gpio": "GPIO5",
+    "rx_gpio": "GPIO4"
+  },
+  "leakage": {
+    "gpio": "GPIO2",
+    "calibration_scans": 15
+  }
+}

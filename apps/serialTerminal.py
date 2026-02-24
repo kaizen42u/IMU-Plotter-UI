@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import List, Callable
 from queue import Queue
 
-from configManager import get_config_manager
+from configManager import (
+    get_config_manager,
+    list_config_profiles,
+    set_active_config,
+    get_active_config_path,
+)
 from serialHandler import serialHandler
 from ansiEncoding import ANSI
 from tkAutocompleteCombobox import tkAutocompleteCombobox
@@ -61,6 +66,10 @@ class SerialTerminal:
         self.serial: serialHandler = serialHandler()
 
         self.setup_ui()
+
+        # Load config profiles into selector
+        self._profile_paths: dict[str, Path] = {}
+        self._refresh_config_profiles()
 
         # Enable logging based on config
         self.logging_var.set(self.logging_enabled_default)
@@ -186,7 +195,7 @@ class SerialTerminal:
             ),
         )
         self.terminal_auto_scroll_checkbox.config(width=20)
-        self.terminal_auto_scroll_checkbox.grid(row=0, column=5, padx=5)
+        self.terminal_auto_scroll_checkbox.grid(row=1, column=2, columnspan=2, padx=5)
 
         # Create logging checkbox
         self.logging_var = tk.BooleanVar(
@@ -199,7 +208,21 @@ class SerialTerminal:
             command=self.toggle_logging,
         )
         self.logging_checkbox.config(width=20)
-        self.logging_checkbox.grid(row=0, column=6, padx=5)
+        self.logging_checkbox.grid(row=1, column=4, padx=5)
+
+        # Create config profile selector
+        self.profile_label = tk.Label(master=self.control_frame, text="Config Profile:")
+        self.profile_label.grid(row=1, column=0, padx=5, pady=(2, 5), sticky="w")
+
+        self.profile_combobox = tkAutocompleteCombobox(
+            master=self.control_frame, state="readonly"
+        )
+        self.profile_combobox.grid(
+            row=1, column=1, columnspan=3, padx=(5, 15), pady=(2, 5), sticky="w"
+        )
+        self.profile_combobox.bind(
+            "<<ComboboxSelected>>", lambda event: self._on_profile_selected()
+        )
 
         # Configure grid to allow terminal to expand and compress other rows
         self.master.grid_rowconfigure(0, weight=0)  # Top controls: minimal height
@@ -247,6 +270,63 @@ class SerialTerminal:
             command=self.toggle_events,
         )
         self.toggle_events_button.grid(row=0, column=3, padx=5)
+
+    def _refresh_config_profiles(self) -> None:
+        """Refresh available configuration profiles in the selector."""
+        self._profile_paths = list_config_profiles()
+        profile_names = list(self._profile_paths.keys())
+        self.profile_combobox.set_completion_list(profile_names)
+
+        active_path = get_active_config_path()
+        active_display = None
+        for name, path in self._profile_paths.items():
+            try:
+                if path.resolve() == active_path.resolve():
+                    active_display = name
+                    break
+            except Exception:
+                continue
+
+        if active_display:
+            self.profile_combobox.set(active_display)
+        elif profile_names:
+            self.profile_combobox.set(profile_names[0])
+
+    def _apply_config_from_manager(self) -> None:
+        """Apply active config values to the UI and local state."""
+        config = get_config_manager()
+        self.port = config.get("serial.port", self.port)
+        self.baudrate = config.get("serial.baudrate", self.baudrate)
+        self.auto_scroll_enabled = config.get(
+            "serial.auto_scroll", self.auto_scroll_enabled
+        )
+        self.logging_enabled_default = config.get(
+            "serial.logging_enabled", self.logging_enabled_default
+        )
+
+        self.port_selection_combobox.set(self.port)
+        self.baudrate_combobox.set(str(self.baudrate))
+        self.terminal_auto_scroll_var.set(self.auto_scroll_enabled)
+        self.terminal.set_autoscroll(self.auto_scroll_enabled)
+
+        self.logging_var.set(self.logging_enabled_default)
+        if self.logging_enabled_default and not self.logging_enabled:
+            self.start_logging()
+        elif not self.logging_enabled_default and self.logging_enabled:
+            self.stop_logging()
+
+    def _on_profile_selected(self) -> None:
+        """Handle profile selection change."""
+        selection = self.profile_combobox.get()
+        profile_path = self._profile_paths.get(selection)
+        if not profile_path:
+            return
+
+        set_active_config(profile_path)
+        self._apply_config_from_manager()
+        self.show_message(
+            f"{ANSI.bGreen}Config profile set to {selection}{ANSI.default}"
+        )
 
     def register_connection_state_callback(self, callback: Callable[[], None]) -> None:
         """Register a callback to be called when connection state changes."""
