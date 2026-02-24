@@ -42,6 +42,8 @@ class tkTerminal:
 
     # Writes text on screen
     def write(self, data: str) -> None:
+        if "\r" in data:
+            data = data.replace("\r", "")
         if self.ansi_formatter:
             self.ansi_formatter.insert_ansi(txt=data, index=tk.END)
         else:
