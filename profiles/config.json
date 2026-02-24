@@ -12,12 +12,12 @@
     "frequency": "300Hz",
     "esc1": {
       "gpio": "GPIO9",
-      "direction": "Inverted",
+      "direction": "Normal",
       "calibration": [
         1000,
-        1477,
+        1440,
         1500,
-        1520,
+        1590,
         2000
       ]
     },
@@ -26,9 +26,9 @@
       "direction": "Inverted",
       "calibration": [
         1000,
-        1492,
+        1425,
         1500,
-        1537,
+        1565,
         2000
       ]
     },
@@ -37,9 +37,9 @@
       "direction": "Normal",
       "calibration": [
         1000,
-        1478,
+        1435,
         1500,
-        1534,
+        1575,
         2000
       ]
     },
@@ -51,17 +51,6 @@
         1492,
         1500,
         1514,
-        2000
-      ]
-    },
-    "esc5": {
-      "gpio": "GPIO13",
-      "direction": "Normal",
-      "calibration": [
-        1000,
-        1500,
-        1500,
-        1500,
         2000
       ]
     }
