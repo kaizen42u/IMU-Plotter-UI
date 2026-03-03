@@ -125,5 +125,9 @@
   "bno085": {
     "tx_gpio": "GPIO5",
     "rx_gpio": "GPIO4"
+  },
+  "mpu6050": {
+    "sda_gpio": "GPIO37",
+    "scl_gpio": "GPIO36"
   }
 }

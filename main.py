@@ -5,6 +5,7 @@ from typing import Optional
 
 from apps.serialTerminal import SerialTerminal
 from apps.imuPlotter import IMUPlotter
+from apps.mpu6050Plotter import MPU6050Plotter
 from apps.escControlApp import ESCControlApp
 from apps.lightControlApp import LightControlApp
 from apps.controlPadApp import ControlPadApp
@@ -20,6 +21,8 @@ vc288_app: Optional[VC288App] = None
 leakage_app: Optional[LeakageApp] = None
 imu_plotter_window: Optional[tk.Toplevel] = None
 imu_plotter_app: Optional[IMUPlotter] = None
+mpu6050_plotter_window: Optional[tk.Toplevel] = None
+mpu6050_plotter_app: Optional[MPU6050Plotter] = None
 
 
 def toggle_window(
@@ -153,6 +156,40 @@ def toggle_imu_plotter(serial_terminal: SerialTerminal):
     toggle_window("imu_plotter_window", create_imu)
 
 
+def toggle_mpu6050_plotter(serial_terminal: SerialTerminal):
+    """Toggle MPU6050 plotter window visibility."""
+    global mpu6050_plotter_window, mpu6050_plotter_app
+
+    def create_mpu6050():
+        global mpu6050_plotter_window, mpu6050_plotter_app
+        mpu6050_plotter_window = tk.Toplevel()
+        mpu6050_plotter_window.title("MPU6050 Plotter")
+
+        mpu6050_frame = tk.Frame(master=mpu6050_plotter_window)
+        mpu6050_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        mpu6050_plotter_app = MPU6050Plotter(master=mpu6050_frame, serial_terminal=serial_terminal)
+
+        # Auto-size window to fit content
+        mpu6050_plotter_window.update_idletasks()
+        width = mpu6050_frame.winfo_reqwidth() + 10
+        height = mpu6050_frame.winfo_reqheight() + 10
+        mpu6050_plotter_window.geometry(f"{width}x{height}")
+        
+        # Create a wrapper object with .window attribute for compatibility with toggle_window
+        class MPU6050PlotterWrapper:
+            def __init__(self, window):
+                self.window = window
+            
+            def destroy(self):
+                """Destroy the window."""
+                self.window.destroy()
+        
+        return MPU6050PlotterWrapper(mpu6050_plotter_window)
+
+    toggle_window("mpu6050_plotter_window", create_mpu6050)
+
+
 def toggle_vc288(serial_terminal: SerialTerminal):
     """Toggle VC288 sensor window visibility."""
     global vc288_app
@@ -237,11 +274,20 @@ def main():
     # Add IMU Plotter toggle button
     imu_button = tk.Button(
         master=buttons_frame,
-        text="IMU Plotter",
+        text="IMU Plotter (BNO085)",
         command=lambda: toggle_imu_plotter(serial_terminal),
     )
     imu_button.config(width=20)
     imu_button.grid(row=0, column=0, padx=2, pady=2)
+
+    # Add MPU6050 Plotter toggle button
+    mpu6050_button = tk.Button(
+        master=buttons_frame,
+        text="MPU6050 Plotter",
+        command=lambda: toggle_mpu6050_plotter(serial_terminal),
+    )
+    mpu6050_button.config(width=20)
+    mpu6050_button.grid(row=1, column=0, padx=2, pady=2)
 
     # Add ESC control button
     esc_button = tk.Button(
@@ -250,7 +296,7 @@ def main():
         command=lambda: toggle_esc_control(serial_terminal),
     )
     esc_button.config(width=20)
-    esc_button.grid(row=1, column=0, padx=2, pady=2)
+    esc_button.grid(row=2, column=0, padx=2, pady=2)
 
     # Add light control button
     light_button = tk.Button(
@@ -259,7 +305,7 @@ def main():
         command=lambda: toggle_light_control(serial_terminal),
     )
     light_button.config(width=20)
-    light_button.grid(row=2, column=0, padx=2, pady=2)
+    light_button.grid(row=3, column=0, padx=2, pady=2)
 
     # Add control pad button
     control_pad_button = tk.Button(
@@ -268,7 +314,7 @@ def main():
         command=lambda: toggle_control_pad(serial_terminal),
     )
     control_pad_button.config(width=20)
-    control_pad_button.grid(row=3, column=0, padx=2, pady=2)
+    control_pad_button.grid(row=4, column=0, padx=2, pady=2)
 
     # Add VC288 sensor button
     vc288_button = tk.Button(
@@ -277,7 +323,7 @@ def main():
         command=lambda: toggle_vc288(serial_terminal),
     )
     vc288_button.config(width=20)
-    vc288_button.grid(row=4, column=0, padx=2, pady=2)
+    vc288_button.grid(row=5, column=0, padx=2, pady=2)
 
     # Add Leakage sensor button
     leakage_button = tk.Button(
@@ -286,18 +332,22 @@ def main():
         command=lambda: toggle_leakage(serial_terminal),
     )
     leakage_button.config(width=20)
-    leakage_button.grid(row=5, column=0, padx=2, pady=2)
+    leakage_button.grid(row=6, column=0, padx=2, pady=2)
 
     # Register callback to update control apps when connection state changes
     serial_terminal.register_connection_state_callback(update_control_apps_state)
 
     # Register close handler
     def on_root_closing():
-        global imu_plotter_window, imu_plotter_app
+        global imu_plotter_window, imu_plotter_app, mpu6050_plotter_window, mpu6050_plotter_app
         if imu_plotter_window is not None:
             imu_plotter_window.destroy()
             imu_plotter_app = None
             imu_plotter_window = None
+        if mpu6050_plotter_window is not None:
+            mpu6050_plotter_window.destroy()
+            mpu6050_plotter_app = None
+            mpu6050_plotter_window = None
         on_closing(serial_terminal, None, root)
 
     root.protocol("WM_DELETE_WINDOW", on_root_closing)
