@@ -1,7 +1,7 @@
 {
   "serial": {
     "port": "/dev/ttyUSB0",
-    "baudrate": 115200,
+    "baudrate": 921600,
     "timeout": 1.0,
     "auto_scroll": true,
     "logging_enabled": false,
@@ -15,9 +15,9 @@
       "direction": "Inverted",
       "calibration": [
         1000,
-        1477,
+        1460,
         1500,
-        1520,
+        1535,
         2000
       ]
     },
@@ -26,9 +26,9 @@
       "direction": "Inverted",
       "calibration": [
         1000,
-        1492,
+        1465,
         1500,
-        1537,
+        1545,
         2000
       ]
     },
@@ -37,9 +37,9 @@
       "direction": "Normal",
       "calibration": [
         1000,
-        1478,
+        1480,
         1500,
-        1534,
+        1545,
         2000
       ]
     }
@@ -47,7 +47,17 @@
   "light": {
     "gpio": "GPIO4",
     "frequency": "44100Hz",
-    "gamma": "2.3"
+    "control_method": "array",
+    "gamma": "3.0",
+    "power_values": [
+      0,
+      2,
+      3,
+      4,
+      5,
+      6,
+      256
+    ]
   },
   "control_pad": {
     "forward": [
@@ -105,11 +115,15 @@
   },
   "vc288": {
     "gpio": 12,
-    "voltage_offset": 0,
-    "current_offset": 0,
-    "voltage_slope": 1,
-    "current_slope": 1,
+    "voltage_offset": 0.0,
+    "current_offset": 0.0,
+    "voltage_slope": 1.0,
+    "current_slope": 1.0,
     "voltage_x2": 0.0,
     "current_x2": 0.0
+  },
+  "bno085": {
+    "tx_gpio": "GPIO5",
+    "rx_gpio": "GPIO4"
   }
 }

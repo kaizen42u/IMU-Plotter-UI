@@ -49,11 +49,15 @@ class LightControlApp:
         self.light_gpio = config.get("light.gpio", "GPIO14")
         self.light_frequency = config.get("light.frequency", "44100Hz")
         self.light_gamma_str = config.get("light.gamma", "2.3")
+        self.light_control_method = config.get("light.control_method", "gamma")
+        self.light_power_values = config.get("light.power_values", [0, 5, 15, 40, 80, 140, 200, 256])
 
         self.light_initialized: bool = False
         self.light_power_pending: float | None = None
         self.light_power_send_scheduled: bool = False
         self.current_gamma: float = float(self.light_gamma_str)
+        self.current_control_method: str = self.light_control_method
+        self.current_power_values: list[int] = self.light_power_values.copy()
 
         # Background thread for power level monitoring
         self.power_monitor_thread: threading.Thread | None = None
@@ -148,6 +152,35 @@ class LightControlApp:
         self.gamma_combobox.pack(side=tk.LEFT, padx=2)
         self.gamma_combobox.bind("<<ComboboxSelected>>", self.on_gamma_changed)
 
+        # Control method selection (radio buttons)
+        method_frame: tk.Frame = tk.Frame(master=light_frame)
+        method_frame.pack(fill=tk.X, pady=5)
+
+        method_label: tk.Label = tk.Label(
+            master=method_frame, text="Control Method:", anchor="w"
+        )
+        method_label.pack(side=tk.LEFT, padx=5)
+
+        self.control_method_var = tk.StringVar(value=self.current_control_method)
+
+        self.gamma_radio: tk.Radiobutton = tk.Radiobutton(
+            master=method_frame,
+            text="Gamma",
+            variable=self.control_method_var,
+            value="gamma",
+            command=self.on_control_method_changed,
+        )
+        self.gamma_radio.pack(side=tk.LEFT, padx=5)
+
+        self.array_radio: tk.Radiobutton = tk.Radiobutton(
+            master=method_frame,
+            text="Array",
+            variable=self.control_method_var,
+            value="array",
+            command=self.on_control_method_changed,
+        )
+        self.array_radio.pack(side=tk.LEFT, padx=5)
+
         # Init and Deinit buttons
         button_frame: tk.Frame = tk.Frame(master=config_frame)
         button_frame.pack(side=tk.RIGHT, padx=5)
@@ -216,11 +249,18 @@ class LightControlApp:
         )
 
     def _level_to_pwm(self, level: int) -> int:
-        """Convert power level (0-7) to PWM value (0-256) using gamma correction."""
-        normalized = level / 7.0
-        gamma_corrected = pow(normalized, self.current_gamma)
-        pwm_value = int(gamma_corrected * 256)
-        return min(pwm_value, 256)
+        """Convert power level (0-7) to PWM value (0-256) using selected method."""
+        if self.current_control_method == "array":
+            # Use array-based lookup
+            if 0 <= level < len(self.current_power_values):
+                return min(self.current_power_values[level], 256)
+            return 0
+        else:
+            # Use gamma correction (default)
+            normalized = level / 7.0
+            gamma_corrected = pow(normalized, self.current_gamma)
+            pwm_value = int(gamma_corrected * 256)
+            return min(pwm_value, 256)
 
     def on_gamma_changed(self, event: tk.Event | None = None) -> None:
         """Handle gamma value change."""
@@ -233,6 +273,21 @@ class LightControlApp:
                 self.power_value_label.config(text=f"{pwm_value}/256")
         except ValueError:
             print("Invalid gamma value")
+
+    def on_control_method_changed(self) -> None:
+        """Handle control method change between gamma and array."""
+        self.current_control_method = self.control_method_var.get()
+        # Update gamma combobox state based on method
+        if self.current_control_method == "gamma":
+            self.gamma_combobox.config(state="readonly")
+        else:
+            self.gamma_combobox.config(state="disabled")
+        
+        # Recalculate PWM value with new method
+        if self.light_initialized:
+            level = int(self.power_slider.get())
+            pwm_value = self._level_to_pwm(level)
+            self.power_value_label.config(text=f"{pwm_value}/256")
 
     def _on_power_slider_changed(self, level: int) -> None:
         """Handle power slider change - update the monitor thread."""
@@ -320,6 +375,14 @@ class LightControlApp:
         self.frequency_combobox.config(
             state="disabled" if self.light_initialized else "readonly"
         )
+        # Gamma combobox state depends on both init status and control method
+        if self.light_initialized:
+            self.gamma_combobox.config(state="disabled")
+        elif self.current_control_method == "gamma":
+            self.gamma_combobox.config(state="readonly")
+        else:
+            self.gamma_combobox.config(state="disabled")
+        
         self.power_slider.config(
             state="normal" if self.light_initialized else "disabled"
         )
@@ -409,10 +472,13 @@ class LightControlApp:
             gpio = self.gpio_combobox.get()
             frequency = self.frequency_combobox.get()
             gamma = self.gamma_combobox.get()
+            control_method = self.control_method_var.get()
 
             config.set("light.gpio", gpio)
             config.set("light.frequency", frequency)
             config.set("light.gamma", gamma)
+            config.set("light.control_method", control_method)
+            config.set("light.power_values", self.current_power_values)
 
             config.save()
         except Exception as e:

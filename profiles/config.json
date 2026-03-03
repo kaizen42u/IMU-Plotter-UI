@@ -58,7 +58,9 @@
   "light": {
     "gpio": "GPIO14",
     "frequency": "44100Hz",
-    "gamma": "2.3"
+    "control_method": "gamma",
+    "gamma": "2.3",
+    "power_values": [0, 5, 15, 40, 80, 140, 200, 256]
   },
   "control_pad": {
     "forward": [
