@@ -1,7 +1,7 @@
 {
   "serial": {
-    "port": "/dev/ttyACM0",
-    "baudrate": 921600,
+    "port": "/dev/ttyUSB0",
+    "baudrate": 115200,
     "timeout": 1.0,
     "auto_scroll": true,
     "logging_enabled": true,
@@ -131,7 +131,7 @@
     "scl_gpio": "GPIO36"
   },
   "leakage": {
-    "gpio": "GPIO12",
+    "gpio": "GPIO2",
     "calibration_scans": 3
   }
 }
