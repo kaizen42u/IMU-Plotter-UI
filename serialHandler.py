@@ -44,7 +44,16 @@ class serialHandler:
         ports = serial.tools.list_ports.comports()
         return [port.device for port in ports]
 
-    def connect(self, port: str, baudrate: int | None = None) -> bool:
+    def connect(
+        self,
+        port: str,
+        baudrate: int | None = None,
+        bytesize: int = 8,
+        parity: str = "N",
+        stopbits: float = 1,
+        rtscts: bool = False,
+        xonxoff: bool = False,
+    ) -> bool:
         with self._lock:
             if self.is_connected():
                 self.log("Already connected. Disconnect first.")
@@ -53,8 +62,19 @@ class serialHandler:
                 baudrate = self.baudrate
             try:
                 self.serial_port = serial.Serial(
-                    port, baudrate=baudrate, timeout=self.timeout
+                    port,
+                    baudrate=baudrate,
+                    bytesize=bytesize,
+                    parity=parity,
+                    stopbits=stopbits,
+                    rtscts=rtscts,
+                    xonxoff=xonxoff,
+                    timeout=self.timeout,
                 )
+                # Wait briefly for any buffered "welcome" bytes to arrive, then
+                # discard everything so the first readline() gets clean data.
+                sleep(0.1)
+                self.serial_port.reset_input_buffer()
                 self.connected_port = port
                 self._killed_event.clear()
                 self.log(f"Port [{self.serial_port.name}] Connected")

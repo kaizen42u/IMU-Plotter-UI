@@ -1,0 +1,92 @@
+{
+  "control_pad": {},
+  "serial": {
+    "port": "/dev/ttyACM0",
+    "baudrate": 921600,
+    "auto_scroll": true,
+    "logging_enabled": true,
+    "show_events": false,
+    "terminal_max_width": 1200,
+    "auto_reconnect": true,
+    "bytesize": "8",
+    "parity": "None",
+    "stopbits": "1",
+    "flow_control": "None",
+    "font_family": "JetBrains Mono",
+    "font_size": 11
+  },
+  "ledc": {
+    "timer0": {
+      "hz": 44101
+    },
+    "timer1": {
+      "hz": 5000
+    },
+    "timer2": {
+      "hz": 5000
+    },
+    "timer3": {
+      "hz": 5000
+    },
+    "channel0": {
+      "timer": 1,
+      "gpio": 14,
+      "duty": 179
+    },
+    "channel1": {
+      "timer": 1,
+      "gpio": 0,
+      "duty": 0
+    },
+    "channel2": {
+      "timer": 1,
+      "gpio": 0,
+      "duty": 0
+    },
+    "channel3": {
+      "timer": 1,
+      "gpio": 0,
+      "duty": 0
+    },
+    "channel4": {
+      "timer": 1,
+      "gpio": 0,
+      "duty": 0
+    },
+    "channel5": {
+      "timer": 1,
+      "gpio": 0,
+      "duty": 0
+    },
+    "channel6": {
+      "timer": 1,
+      "gpio": 0,
+      "duty": 0
+    },
+    "channel7": {
+      "timer": 1,
+      "gpio": 0,
+      "duty": 0
+    }
+  },
+  "leakage": {
+    "gpio": "GPIO2",
+    "calibration_scans": 3
+  },
+  "light": {
+    "gpio": "GPIO14",
+    "frequency": "44100Hz",
+    "gamma": "2.3",
+    "control_method": "gamma",
+    "power_values": [
+      0,
+      5,
+      15,
+      40,
+      80,
+      140,
+      200,
+      256
+    ]
+  }
+}
