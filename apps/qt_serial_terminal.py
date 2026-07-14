@@ -57,7 +57,9 @@ class SerialTerminalWidget(QWidget):
             "logging_enabled": True,
             "terminal_max_width": 500,
             "auto_reconnect": False,
+            "auto_connect": False,
             "show_events": True,
+            "local_echo": True,
             "bytesize": "8",
             "parity": "None",
             "stopbits": "1",
@@ -73,6 +75,9 @@ class SerialTerminalWidget(QWidget):
         self._reconnect_attempts = 0
         self._reconnect_timer: QTimer | None = None  # debounce timer
         self._show_events: bool = self._cfg.show_events
+        # Local echo of sent commands ("> cmd", shown purple). Redundant now that
+        # the firmware echoes commands itself, so it's toggleable.
+        self._show_echo: bool = self._cfg.local_echo
 
         # Callbacks (legacy API)
         self._connection_callbacks: List[Callable[[], None]] = []
@@ -367,6 +372,16 @@ class SerialTerminalWidget(QWidget):
         except ValueError:
             self.show_message("\x1b[31mInvalid baudrate\x1b[0m")
 
+    def try_auto_connect(self) -> None:
+        """Connect on startup if auto_connect is enabled and the port is available."""
+        if not self._cfg.auto_connect:
+            return
+        if self.serial.is_connected():
+            return
+        port = self._port_combo.currentText()
+        if port and port in self.serial.get_ports():
+            self.connect_from_settings()
+
     def _sync_repl(self) -> None:
         """Send a bare newline so the device REPL emits a clean prompt."""
         if self.serial.is_connected():
@@ -481,7 +496,20 @@ class SerialTerminalWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _on_line_received(self, line: str) -> None:
-        normalized = _strip_ansi(line).strip()
+        # Strip trailing CR/LF FIRST — the firmware terminates event lines with a
+        # trailing "\r\r" ("...\x1b[0m\r\r"). Splitting before stripping would make
+        # rsplit("\r")[-1] return "" and miss the "[EVENT " tag entirely.
+        normalized = _strip_ansi(line).rstrip("\r\n")
+        # Honor the firmware's in-place line rewrite (CR + erase-line): only the
+        # segment after the last \r is actually displayed. Classify on that so a
+        # leftover echo fragment like "repl> g\r[EVENT ...]" is still recognized
+        # as an event — otherwise it hides the "[EVENT " tag and the event both
+        # leaks onto the terminal (even with events off) and is never dispatched
+        # to the sensor apps. Matches SerialResponseParser's \r handling.
+        if "\r" in normalized:
+            normalized = normalized.rsplit("\r", 1)[-1]
+        normalized = normalized.strip()
+        is_bare_prompt = normalized == "repl>"
         if normalized.startswith("repl> "):
             normalized = normalized[6:].lstrip()
 
@@ -489,7 +517,17 @@ class SerialTerminalWidget(QWidget):
         is_event = normalized.startswith("[EVENT ")
 
         if not is_event or self._show_events:
-            self._terminal.write(line + "\n")
+            if is_bare_prompt and not self._show_echo:
+                # With local echo off, keep the bare prompt on its own line with
+                # no trailing newline so the firmware's command echo appends to it
+                # ("repl> gpio 0 read") instead of dropping the command onto a
+                # separate line below the prompt. Skip if we're already sitting at
+                # a bare prompt — the firmware emits two in a row at startup, which
+                # would otherwise concatenate into "repl> repl> ".
+                if self._terminal.document().lastBlock().text().rstrip() != "repl>":
+                    self._terminal.write("repl> ")
+            else:
+                self._terminal.write(line + "\n")
 
         if is_event:
             self._process_event_line(normalized)
@@ -603,7 +641,8 @@ class SerialTerminalWidget(QWidget):
         if success:
             if self._logging_enabled:
                 self._write_log("T ", command)
-            self.show_message(f"\x1b[32m> {command.rstrip()}\x1b[0m")
+            if self._show_echo:
+                self.show_message(f"\x1b[32m> {command.rstrip()}\x1b[0m")
         elif from_ui:
             self.show_message("\x1b[31mError: Failed to send command\x1b[0m")
 
@@ -666,11 +705,6 @@ class SerialTerminalWidget(QWidget):
     def _on_autoscroll_toggled(self, checked: bool) -> None:
         self._terminal.set_autoscroll(checked)
 
-    def _toggle_events(self) -> None:
-        self._show_events = not self._show_events
-        self._toggle_events_btn.setText("Hide Events" if self._show_events else "Show Events")
-        self.show_message(f"\x1b[33mEvents display: {'ON' if self._show_events else 'OFF'}\x1b[0m")
-
     def _send_from_ui(self) -> None:
         self.send_command()
 
@@ -681,6 +715,7 @@ class SerialTerminalWidget(QWidget):
             self._cfg.auto_scroll = self._autoscroll_cb.isChecked()
             self._cfg.logging_enabled = self._logging_checkbox.isChecked()
             self._cfg.show_events = self._show_events
+            self._cfg.local_echo = self._show_echo
             self._cfg.terminal_max_width = self._terminal.max_lines
             pool.save()
         except Exception as e:

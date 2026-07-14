@@ -79,6 +79,9 @@ class SerialResponseParser:
 
         serial_terminal.register_line_received_callback(self._on_line)
         serial_terminal.register_send_callback(self._on_any_send)
+        # A (re)connect or disconnect invalidates any in-flight tracking —
+        # flush automatically so a desync never survives a reconnect.
+        serial_terminal.register_connection_state_callback(self._on_connection_changed)
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,6 +107,31 @@ class SerialResponseParser:
         if not cmd.endswith("\n"):
             cmd += "\n"
         self._st.send_command(cmd)
+
+    def reset(self, notify: bool = True) -> None:
+        """
+        Flush all tracking state after a desync (lost echo, reboot mid-response,
+        garbage on the line…).  Every pending command is abandoned; with
+        notify=True their callbacks fire with status "ABORT" so waiting panes
+        can unstick their UI state.
+        """
+        abandoned = list(self._pending)
+        self._pending.clear()
+        self._staged.clear()
+        self._collecting = False
+        self._body = []
+        if notify:
+            for cmd, callback in abandoned:
+                if callback is not None:
+                    try:
+                        callback([], "ABORT")
+                    except Exception as e:
+                        print(f"[ResponseParser] abort callback error for '{cmd}': {e}")
+                for cb in self._response_cbs:
+                    try:
+                        cb(cmd, [], "ABORT")
+                    except Exception:
+                        pass
 
     # -- observer registration --
 
@@ -145,6 +173,9 @@ class SerialResponseParser:
     # ------------------------------------------------------------------
     # Internal
 
+    def _on_connection_changed(self) -> None:
+        self.reset()
+
     def _on_any_send(self, cmd: str) -> None:
         """Called for every successful send_command() — the single enqueue point."""
         normalised = cmd.strip()
@@ -163,11 +194,29 @@ class SerialResponseParser:
                 pass
 
     def _on_line(self, raw: str) -> None:
+        # The firmware rewrites the current display line in place with a carriage
+        # return plus erase-line (e.g. "repl> gpio 26 rea\r\x1b[2K[EVENT ...]");
+        # _strip_ansi has already removed the erase code. Each \r starts a fresh
+        # render — everything before it was ERASED on the display.
+        #
+        # Split into those render segments and process each in order. Only the
+        # FINAL (surviving) segment may create a "?" debug entry or a body line;
+        # earlier, erased fragments (a partial echo, a bare "repl> ") are dropped
+        # silently instead of corrupting matching. But committed tokens — a
+        # command echo, an OK/FAIL terminator, or an [EVENT] — are still honored
+        # in ANY segment, so an event that erased an OK can never strand the
+        # pending queue (which is what "keep last segment only" risked).
         line = _strip_ansi(raw).rstrip("\r\n")
+        segments = line.split("\r")
+        last = len(segments) - 1
+        for i, seg in enumerate(segments):
+            self._process_segment(seg, is_last=(i == last))
+
+    def _process_segment(self, line: str, is_last: bool) -> None:
         stripped = line.strip()
 
         if not stripped:
-            if self._collecting:
+            if is_last and self._collecting:
                 self._body.append(line)
             return
 
@@ -175,9 +224,12 @@ class SerialResponseParser:
         # When the firmware processes a second command immediately, it echoes it
         # on the same line as the prompt: "repl> help ledc".  Discarding the
         # whole line would eat the echo and leave the pending entry stuck.
+        # The prompt marks a genuine command echo (vs a response body line),
+        # which the desync recovery below relies on.
         if stripped == "repl>":
             return
-        if stripped.startswith("repl> "):
+        had_prompt = stripped.startswith("repl> ")
+        if had_prompt:
             stripped = stripped[6:].strip()
             line = stripped
             if not stripped:
@@ -193,33 +245,72 @@ class SerialResponseParser:
                     pass
             return
 
+        # --- Desync auto-recovery ------------------------------------------
+        # A prompted echo ("repl> <cmd>") that matches a command deeper in the
+        # queue means the head command(s) never got a complete response — the
+        # firmware truncated or dropped it (e.g. reading the SPI-flash GPIOs).
+        # Abandon the skipped commands as faulty and resync to the matched one,
+        # so a single missing response can't jam the whole queue.
+        if had_prompt and self._pending:
+            k = self._match_pending_index(stripped)
+            if k is not None and k >= 1:
+                self._resync(k)          # fault pending[0..k-1]
+                self._collecting = True  # matched command's response follows
+                self._body = []
+                return
+
         if not self._collecting:
             if self._pending and stripped == self._pending[0][0]:
                 self._collecting = True
                 self._body = []
-            else:
+            elif is_last:
                 self._debug.append(line)
                 for cb in self._debug_cbs:
                     try:
                         cb(line)
                     except Exception:
                         pass
+            # else: an erased transient fragment — drop it silently.
         else:
             if stripped in _TERMINAL_TOKENS:
                 cmd, callback = self._pending.popleft()
-                body = [l for l in self._body if l.strip()]
-                status = stripped
-                if callback is not None:
-                    try:
-                        callback(body, status)
-                    except Exception as e:
-                        print(f"[ResponseParser] callback error for '{cmd}': {e}")
-                for cb in self._response_cbs:
-                    try:
-                        cb(cmd, body, status)
-                    except Exception:
-                        pass
+                self._complete(cmd, callback, [l for l in self._body if l.strip()], stripped)
                 self._collecting = False
                 self._body = []
-            else:
+            elif is_last:
                 self._body.append(line)
+            # else: an erased transient fragment mid-response — drop it silently.
+
+    # ------------------------------------------------------------------
+    def _match_pending_index(self, cmd: str) -> int | None:
+        """Index of the first pending entry whose command equals *cmd*, or None."""
+        for i, (pcmd, _cb) in enumerate(self._pending):
+            if pcmd == cmd:
+                return i
+        return None
+
+    def _resync(self, k: int) -> None:
+        """Abandon the first *k* pending commands as faulty (status DESYNC).
+
+        The command currently being collected (index 0, if any) keeps whatever
+        partial body arrived; the rest never started, so they get an empty body.
+        """
+        for i in range(k):
+            cmd, callback = self._pending.popleft()
+            body = [l for l in self._body if l.strip()] if (i == 0 and self._collecting) else []
+            self._complete(cmd, callback, body, "DESYNC")
+        self._collecting = False
+        self._body = []
+
+    def _complete(self, cmd: str, callback, body: list[str], status: str) -> None:
+        """Fire the per-command callback and all response observers."""
+        if callback is not None:
+            try:
+                callback(body, status)
+            except Exception as e:
+                print(f"[ResponseParser] callback error for '{cmd}': {e}")
+        for cb in self._response_cbs:
+            try:
+                cb(cmd, body, status)
+            except Exception:
+                pass

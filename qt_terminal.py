@@ -8,9 +8,14 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QPlainTextEdit
 
-# Matches both proper ANSI (\x1b[...m) and the bare-bracket style ([...m) used by
-# ansiEncoding.py constants, which embed the bracket without the ESC byte.
-_ANSI_RE = re.compile(r"(?:\x1b\[|\[)([0-9;]*)m")
+# CSI sequences we act on. Two alternatives:
+#   1. ESC form  \x1b[<params><final>  — any final byte (real ANSI from firmware),
+#      e.g. \x1b[97m (color) or \x1b[2K (erase line).
+#   2. bare form [<params>m            — SGR only, params required, used by
+#      ansiEncoding.py constants which omit the ESC byte.
+# The bare form is restricted to `m` with at least one digit so literals like
+# "[EVENT 0x30]" are never mistaken for control sequences.
+_CSI_RE = re.compile(r"\x1b\[([0-9;]*)([A-Za-z])|\[([0-9;]+)(m)")
 
 # VSCode Dark+ inspired palette, with fixes:
 #   code 30 (black) → dark gray so it's visible on the dark background
@@ -114,6 +119,10 @@ class AnsiTerminal(QPlainTextEdit):
         self._fmt = QTextCharFormat()
         self._reset_fmt()
 
+        # After a carriage return, subsequent text overwrites the current line
+        # instead of being inserted; cleared on newline.
+        self._overwrite = False
+
         # rangeChanged fires AFTER Qt recalculates the document layout, so maximum()
         # is always the true current bottom — unlike reading it inside write() which may
         # see the pre-insertion value.
@@ -177,18 +186,26 @@ class AnsiTerminal(QPlainTextEdit):
             i += 1
 
     def write(self, text: str) -> None:
-        text = text.replace("\r", "")
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
 
         pos = 0
-        for m in _ANSI_RE.finditer(text):
+        for m in _CSI_RE.finditer(text):
             if m.start() > pos:
-                cursor.insertText(text[pos : m.start()], self._fmt)
-            self._apply_params(m.group(1))
+                self._insert_run(cursor, text[pos : m.start()])
+            # Params/final byte come from whichever alternative matched.
+            if m.group(2) is not None:      # ESC form: any final byte
+                params, final = m.group(1), m.group(2)
+            else:                            # bare form: SGR only
+                params, final = m.group(3), m.group(4)
+            if final == "m":
+                self._apply_params(params)
+            elif final == "K":
+                self._erase_line(cursor, params)
+            # Other final bytes are consumed and ignored (cursor moves, etc.).
             pos = m.end()
         if pos < len(text):
-            cursor.insertText(text[pos:], self._fmt)
+            self._insert_run(cursor, text[pos:])
 
         # Apply line height to every block touched by this insertion.
         cursor.movePosition(QTextCursor.MoveOperation.End)
@@ -201,6 +218,56 @@ class AnsiTerminal(QPlainTextEdit):
             c.select(QTextCursor.SelectionType.BlockUnderCursor)
             c.removeSelectedText()
             c.deleteChar()
+
+    def _insert_run(self, cursor: QTextCursor, run: str) -> None:
+        """Insert plain text, honoring embedded CR (\\r) and LF (\\n)."""
+        segment: list[str] = []
+        for ch in run:
+            if ch == "\r":
+                self._write_segment(cursor, "".join(segment)); segment = []
+                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+                self._overwrite = True
+            elif ch == "\n":
+                self._write_segment(cursor, "".join(segment)); segment = []
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                cursor.insertText("\n", self._fmt)
+                self._overwrite = False
+            else:
+                segment.append(ch)
+        self._write_segment(cursor, "".join(segment))
+
+    def _write_segment(self, cursor: QTextCursor, s: str) -> None:
+        """Insert a newline-free run; in overwrite mode it replaces chars ahead."""
+        if not s:
+            return
+        if self._overwrite:
+            block = cursor.block()
+            block_end = block.position() + block.length() - 1
+            avail = max(0, block_end - cursor.position())
+            n = min(len(s), avail)
+            if n > 0:
+                cursor.movePosition(
+                    QTextCursor.MoveOperation.Right,
+                    QTextCursor.MoveMode.KeepAnchor, n,
+                )
+        cursor.insertText(s, self._fmt)
+
+    def _erase_line(self, cursor: QTextCursor, params: str) -> None:
+        """Handle CSI n K — 0: cursor→end, 1: start→cursor, 2: whole line."""
+        mode = int(params) if params.strip() else 0
+        block = cursor.block()
+        start = block.position()
+        end = block.position() + block.length() - 1
+        cur = cursor.position()
+        if mode == 2:
+            a, b = start, end
+        elif mode == 1:
+            a, b = start, cur
+        else:
+            a, b = cur, end
+        cursor.setPosition(a)
+        cursor.setPosition(b, QTextCursor.MoveMode.KeepAnchor)
+        cursor.removeSelectedText()
 
     def _on_scroll_range_changed(self, _min: int, max_val: int) -> None:
         if self.autoscroll:

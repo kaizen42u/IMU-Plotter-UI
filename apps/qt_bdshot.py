@@ -1,6 +1,13 @@
-"""DShot ESC control window."""
+"""Bidirectional DShot (bDShot) control pane — throttle + live eRPM telemetry.
 
-from config_store import pool
+Firmware: bdshot <id> [init|deinit|rate|dir|set|send|hz|stop|erpm|raw]  (id 1-4)
+  init <gpio> [rate]   → start bidi DShot, idle stream running
+  dir <0|1>            → set spin direction (0 normal, 1 inverted)
+  set <-1.0..1.0>      → throttle (normalized; negative = reverse in bidi)
+
+eRPM is delivered by a single event for all devices:
+  0x80 EVENT_BDSHOT_ERPM,  data "<device_id> <erpm>"
+"""
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -14,24 +21,23 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from config_store import pool
 from qt_throttled_slider import SliderDispatcher, ThrottledSlider
 
 _GPIO_OPTIONS = [f"GPIO{i}" for i in range(22)] + [f"GPIO{i}" for i in range(26, 49)]
-_RATES = ["150", "300", "600", "1200"]
+# 1200 dropped for now — MCU can't keep up with eRPM replies at that rate.
+_RATES = ["150", "300", "600"]
 _MAX_DEVICES = 4
 
+# Single eRPM event for all devices; payload carries the device id.
+_ERPM_EVENT = "0x80"
 
-class _DeviceWidget(QGroupBox):
-    """UI panel for a single DShot device."""
 
-    def __init__(
-        self,
-        device_id: int,
-        serial_terminal,
-        dispatcher: SliderDispatcher,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(f"DShot {device_id}", parent)
+class _BDShotDevice(QGroupBox):
+    """One bidirectional-DShot device: config + throttle + eRPM readout."""
+
+    def __init__(self, device_id, serial_terminal, dispatcher, parent=None) -> None:
+        super().__init__(f"bDShot {device_id}", parent)
         self._id = device_id
         self._st = serial_terminal
         self._initialized = False
@@ -45,7 +51,6 @@ class _DeviceWidget(QGroupBox):
 
         # ── Config row ────────────────────────────────────────────────
         cfg = QHBoxLayout()
-
         cfg.addWidget(QLabel("GPIO:"))
         self._gpio_combo = QComboBox()
         self._gpio_combo.addItems(_GPIO_OPTIONS)
@@ -58,11 +63,10 @@ class _DeviceWidget(QGroupBox):
         self._rate_combo.addItems(_RATES)
         self._rate_combo.setCurrentText("600")
         self._rate_combo.setFixedWidth(70)
-        self._rate_combo.currentTextChanged.connect(self._on_rate_changed)
         cfg.addWidget(self._rate_combo)
 
         self._bidi_cb = QCheckBox("BiDi (reversible)")
-        self._bidi_cb.setToolTip("Bidirectional / 3D mode — motor can spin in reverse")
+        self._bidi_cb.setToolTip("Reversible throttle — slider spans reverse…forward")
         self._bidi_cb.toggled.connect(self._on_bidi_changed)
         cfg.addWidget(self._bidi_cb)
 
@@ -71,70 +75,78 @@ class _DeviceWidget(QGroupBox):
         cfg.addWidget(self._dir_cb)
 
         cfg.addStretch()
-
         self._init_btn = QPushButton("Init")
         self._init_btn.clicked.connect(self._do_init)
         self._deinit_btn = QPushButton("Deinit")
         self._deinit_btn.clicked.connect(self._do_deinit)
         cfg.addWidget(self._init_btn)
         cfg.addWidget(self._deinit_btn)
-
         root.addLayout(cfg)
 
-        # ── Power slider (-1.0 … 1.0) ────────────────────────────────
+        # ── Throttle + live eRPM ─────────────────────────────────────
         power_row = QHBoxLayout()
-        power_row.addWidget(QLabel("Power:"))
+        power_row.addWidget(QLabel("Throttle:"))
         self._power_slider = ThrottledSlider(
             dispatcher,
-            command_fn=lambda v: f"dshot {self._id} set {v / 100:.3f}",
-            label_fn=lambda v: f"{v / 100:.2f}",
+            command_fn=lambda v: f"bdshot {self._id} set {v / 100:.3f}",
+            label_fn=lambda v: f"{v}%",
             label_width=40,
         )
         # Reverse (negative) half only exists in bidirectional mode.
         self._power_slider.setRange(-100 if self._bidi_cb.isChecked() else 0, 100)
         power_row.addWidget(self._power_slider, stretch=1)
+
+        power_row.addSpacing(10)
+        power_row.addWidget(QLabel("eRPM:"))
+        self._erpm_lbl = QLabel("—")
+        self._erpm_lbl.setStyleSheet("font-weight:bold; font-size:14px;")
+        self._erpm_lbl.setMinimumWidth(64)
+        self._erpm_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        power_row.addWidget(self._erpm_lbl)
         root.addLayout(power_row)
 
     # ------------------------------------------------------------------
     def _cmd(self, *args) -> None:
         if self._st.serial.is_connected():
-            self._st.send_command(f"dshot {self._id} " + " ".join(str(a) for a in args) + "\n")
+            self._st.send_command(f"bdshot {self._id} " + " ".join(str(a) for a in args) + "\n")
 
     def _do_init(self) -> None:
         gpio = self._gpio_combo.currentText().replace("GPIO", "")
         self._cmd("init", gpio, self._rate_combo.currentText())
         self._initialized = True
-        # Apply the saved reversible-mode setting to the freshly-inited ESC.
-        self._cmd("bidi", 1 if self._bidi_cb.isChecked() else 0)
+        # Apply the saved direction to the freshly-inited ESC.
+        self._cmd("dir", 1 if self._dir_cb.isChecked() else 0)
         self._update_state()
 
     def _do_deinit(self) -> None:
         self._cmd("deinit")
         self._initialized = False
         self._power_slider.set_value_silent(0)
+        self._erpm_lbl.setText("—")
         self._update_state()
-
-    def _on_rate_changed(self, rate: str) -> None:
-        if self._initialized:
-            self._cmd("rate", rate)
-
-    def _on_bidi_changed(self, checked: bool) -> None:
-        # Give the slider the reverse half only in bidi mode, and drop to stop so
-        # switching modes can't leave a stale reverse setpoint applied.
-        self._power_slider.setRange(-100 if checked else 0, 100)
-        self._power_slider.set_value_silent(0)
-        if self._initialized:
-            self._cmd("bidi", 1 if checked else 0)
-            self._cmd("set", "0.000")
 
     def _on_dir_changed(self, checked: bool) -> None:
         if self._initialized:
             self._cmd("dir", 1 if checked else 0)
 
+    def _on_bidi_changed(self, checked: bool) -> None:
+        # Give the slider the reverse half in bidi mode; drop to stop so switching
+        # modes can't leave a stale reverse setpoint applied. bDShot reverses via
+        # a negative `set` value (no separate firmware bidi command).
+        self._power_slider.setRange(-100 if checked else 0, 100)
+        self._power_slider.set_value_silent(0)
+        if self._initialized:
+            self._cmd("set", "0.000")
+
+    def set_erpm(self, value) -> None:
+        self._erpm_lbl.setText(str(value))
+
+    # ------------------------------------------------------------------
     def on_connection_changed(self) -> None:
         if not self._st.serial.is_connected():
             self._initialized = False
             self._power_slider.set_value_silent(0)
+            self._erpm_lbl.setText("—")
         self._update_state()
 
     def _update_state(self) -> None:
@@ -142,14 +154,15 @@ class _DeviceWidget(QGroupBox):
         self._init_btn.setEnabled(connected and not self._initialized)
         self._deinit_btn.setEnabled(connected and self._initialized)
         self._gpio_combo.setEnabled(not self._initialized)
+        self._rate_combo.setEnabled(not self._initialized)
         self._power_slider.setEnabled(self._initialized)
 
     def get_saved_state(self) -> dict:
         return {
             "gpio": self._gpio_combo.currentText(),
             "rate": self._rate_combo.currentText(),
-            "inverted": self._dir_cb.isChecked(),
             "bidi": self._bidi_cb.isChecked(),
+            "inverted": self._dir_cb.isChecked(),
         }
 
     def apply_saved_state(self, state: dict) -> None:
@@ -157,27 +170,32 @@ class _DeviceWidget(QGroupBox):
             self._gpio_combo.setCurrentText(state["gpio"])
         if "rate" in state:
             self._rate_combo.setCurrentText(state["rate"])
-        if "inverted" in state:
-            self._dir_cb.setChecked(state["inverted"])
         if "bidi" in state:
             self._bidi_cb.setChecked(state["bidi"])
+        if "inverted" in state:
+            self._dir_cb.setChecked(state["inverted"])
 
 
 # ---------------------------------------------------------------------------
 
-class DShotWindow(QWidget):
-    """DShot control panel — supports up to 8 independent DShot devices."""
+class BDShotWindow(QWidget):
+    """Bidirectional DShot control — up to 4 devices with event-driven eRPM."""
 
-    def __init__(self, serial_terminal, parent: QWidget | None = None) -> None:
+    def __init__(self, serial_terminal, parser=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("DShot Control")
+        self.setWindowTitle("bDShot Control")
         self.setWindowFlag(Qt.WindowType.Window)
         self._st = serial_terminal
-        self._devices: list[_DeviceWidget] = []
+        self._parser = parser
+        self._devices: list[_BDShotDevice] = []
         self._dispatcher = SliderDispatcher(serial_terminal)
 
         self._build_ui()
-        self.reload_from_config()  # restore saved devices/gpio/rate/direction
+        self.reload_from_config()
+
+        # eRPM arrives via a single event (0x80) carrying "<device_id> <erpm>";
+        # registering also enables it on the firmware.
+        serial_terminal.register_event_callback(_ERPM_EVENT, self._on_erpm_event)
         serial_terminal.register_connection_state_callback(self._on_connection_changed)
 
     # ------------------------------------------------------------------
@@ -206,7 +224,7 @@ class DShotWindow(QWidget):
     def _add_device(self) -> None:
         if len(self._devices) >= _MAX_DEVICES:
             return
-        dev = _DeviceWidget(len(self._devices) + 1, self._st, self._dispatcher)
+        dev = _BDShotDevice(len(self._devices) + 1, self._st, self._dispatcher)
         self._devices.append(dev)
         self._device_layout.addWidget(dev)
         self._update_buttons()
@@ -225,13 +243,26 @@ class DShotWindow(QWidget):
         self._add_btn.setEnabled(len(self._devices) < _MAX_DEVICES)
         self._remove_btn.setEnabled(len(self._devices) > 0)
 
+    def _on_erpm_event(self, timestamp: str, data: str) -> None:
+        # data: "<device_id> <erpm>" — route to the device with the matching id.
+        parts = data.split()
+        if len(parts) < 2:
+            return
+        try:
+            dev_id = int(parts[0])
+        except ValueError:
+            return
+        for dev in self._devices:
+            if dev._id == dev_id:
+                dev.set_erpm(parts[1])
+                break
+
     def _on_connection_changed(self) -> None:
         for dev in self._devices:
             dev.on_connection_changed()
 
     # ------------------------------------------------------------------
-    # Public API — used by the control pad (mirrors ESCControlWindow).
-    # DShot carries finer resolution than PWM, so power is sent with 3 decimals.
+    # Public API — used by the control pad (mirrors DShotWindow).
     # ------------------------------------------------------------------
 
     @property
@@ -243,37 +274,36 @@ class DShotWindow(QWidget):
             dev = self._devices[i]
             dev._power_slider.set_value_silent(int(round(pwr * 100)))
             if dev._initialized and self._st.serial.is_connected():
-                self._st.send_command(f"dshot {dev._id} set {pwr:.3f}\n")
+                self._st.send_command(f"bdshot {dev._id} set {pwr:.3f}\n")
 
     def stop_all_escs(self) -> None:
-        self.send_all_esc_power([0.0] * len(self._devices))
+        for dev in self._devices:
+            if dev._initialized and self._st.serial.is_connected():
+                self._st.send_command(f"bdshot {dev._id} stop\n")
+            dev._power_slider.set_value_silent(0)
 
     # ------------------------------------------------------------------
     def _save_config(self) -> None:
-        cfg = pool.section("dshot")
+        cfg = pool.section("bdshot")
         cfg.num_devices = len(self._devices)
         for i, dev in enumerate(self._devices):
             setattr(cfg, f"device{i + 1}", dev.get_saved_state())
         pool.save()
 
     def reload_from_config(self) -> None:
-        cfg = pool.section("dshot")
-        # Clamp to the max — an older profile may have saved more than allowed,
-        # which would otherwise spin the "add until num" loop forever.
+        cfg = pool.section("bdshot")
         num = min(cfg.num_devices or len(self._devices), _MAX_DEVICES)
-
         while len(self._devices) > num:
             self._remove_device()
         while len(self._devices) < num:
             self._add_device()
-
         for i, dev in enumerate(self._devices):
             saved = getattr(cfg, f"device{i + 1}", {}) or {}
             dev.apply_saved_state({
                 "gpio": saved.get("gpio", dev._gpio_combo.currentText()),
                 "rate": saved.get("rate", dev._rate_combo.currentText()),
-                "inverted": saved.get("inverted", dev._dir_cb.isChecked()),
                 "bidi": saved.get("bidi", dev._bidi_cb.isChecked()),
+                "inverted": saved.get("inverted", dev._dir_cb.isChecked()),
             })
 
     def closeEvent(self, event) -> None:

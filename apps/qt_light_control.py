@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -14,7 +16,65 @@ from PySide6.QtWidgets import (
 )
 
 from config_store import pool
+from qt_spinbox import HSpinBox
 from qt_throttled_slider import SliderDispatcher, ThrottledSlider
+
+
+class _LightValuesDialog(QDialog):
+    """Edit the ordered PWM-value sequence used by Array control mode."""
+
+    def __init__(self, values: list[int], parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Light Value Sequence")
+        self._spins: list[HSpinBox] = []
+
+        root = QVBoxLayout(self)
+        root.addWidget(QLabel("Ordered PWM values (0–256) the slider steps through:"))
+        self._rows_lay = QVBoxLayout()
+        self._rows_lay.setSpacing(2)
+        root.addLayout(self._rows_lay)
+
+        for v in (values or [0]):
+            self._add_row(v)
+
+        add_btn = QPushButton("+ Add Value")
+        add_btn.clicked.connect(lambda: self._add_row(self._spins[-1].value() if self._spins else 0))
+        root.addWidget(add_btn)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+
+    def _add_row(self, value: int) -> None:
+        row_w = QWidget()
+        row = QHBoxLayout(row_w)
+        row.setContentsMargins(0, 0, 0, 0)
+        spin = HSpinBox()
+        spin.setRange(0, 256)
+        spin.setValue(int(value))
+        spin.setFixedWidth(90)
+        rm = QPushButton("−")
+        rm.setFixedWidth(28)
+        row.addWidget(spin)
+        row.addWidget(rm)
+        row.addStretch()
+        self._rows_lay.addWidget(row_w)
+        self._spins.append(spin)
+
+        def remove():
+            if len(self._spins) <= 1:
+                return  # keep at least one value
+            self._spins.remove(spin)
+            row_w.setParent(None)
+            row_w.deleteLater()
+            self.adjustSize()
+        rm.clicked.connect(remove)
+
+    def values(self) -> list[int]:
+        return [s.value() for s in self._spins]
 
 
 class LightControlWindow(QWidget):
@@ -33,12 +93,15 @@ class LightControlWindow(QWidget):
             "gamma": "2.3",
             "control_method": "gamma",
             "power_values": [0, 5, 15, 40, 80, 140, 200, 256],
+            "bins": 64,
         })
         self._gpio = self._cfg.gpio
         self._freq = self._cfg.frequency
         self._gamma_str = self._cfg.gamma
         self._control_method = self._cfg.control_method
         self._power_values: list[int] = self._cfg.power_values
+        # Gamma-mode slider resolution (number of steps); more = smoother output.
+        self._bins = int(getattr(self._cfg, "bins", 64) or 64)
         self._initialized = False
         self._current_gamma = float(self._gamma_str)
 
@@ -99,6 +162,21 @@ class LightControlWindow(QWidget):
         self._gamma_radio.toggled.connect(self._on_method_changed)
         method_row.addWidget(self._gamma_radio)
         method_row.addWidget(self._array_radio)
+
+        method_row.addSpacing(10)
+        method_row.addWidget(QLabel("Bins:"))
+        self._bins_spin = HSpinBox()
+        self._bins_spin.setRange(8, 256)
+        self._bins_spin.setValue(self._bins)
+        self._bins_spin.setToolTip("Gamma-mode slider resolution — more bins = smoother light")
+        self._bins_spin.valueChanged.connect(self._on_bins_changed)
+        method_row.addWidget(self._bins_spin)
+
+        self._edit_values_btn = QPushButton("Edit Values…")
+        self._edit_values_btn.setToolTip("Edit the Array-mode PWM value sequence")
+        self._edit_values_btn.clicked.connect(self._show_values_editor)
+        method_row.addWidget(self._edit_values_btn)
+
         method_row.addStretch()
         layout.addLayout(method_row)
 
@@ -107,15 +185,15 @@ class LightControlWindow(QWidget):
         power_row.addWidget(QLabel("Power Level:"))
         self._power_slider = ThrottledSlider(
             self._dispatcher,
-            command_fn=lambda v: f"light set {self._level_to_pwm(v)}",
+            command_fn=lambda v: f"light fadeto {self._level_to_pwm(v)} 3 {self._current_gamma:g}",
             label_fn=lambda v: f"{self._level_to_pwm(v)}/256",
             label_width=60,
         )
-        self._power_slider.setRange(0, len(self._power_values) - 1)
         self._power_slider.setEnabled(False)
         self._power_slider.set_label_style("background: #90EE90; border: 1px inset gray;")
         power_row.addWidget(self._power_slider, stretch=1)
         layout.addLayout(power_row)
+        self._apply_slider_range()
 
         root.addWidget(light_box)
         root.addStretch()
@@ -136,9 +214,38 @@ class LightControlWindow(QWidget):
         except ValueError:
             pass
 
+    def _apply_slider_range(self) -> None:
+        # Gamma mode uses the configurable bin count for smoothness; Array mode
+        # is naturally limited to the number of values in the sequence.
+        if self._control_method == "gamma":
+            hi = max(1, self._bins - 1)
+        else:
+            hi = max(1, len(self._power_values) - 1)
+        cur = min(self._power_slider.value(), hi)
+        self._power_slider.setRange(0, hi)
+        self._power_slider.set_value_silent(cur)
+
+    def _on_bins_changed(self, value: int) -> None:
+        self._bins = value
+        if self._control_method == "gamma":
+            self._apply_slider_range()
+
+    def _show_values_editor(self) -> None:
+        dlg = _LightValuesDialog(self._power_values, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            vals = dlg.values()
+            if vals:
+                self._power_values = vals
+                self._cfg.power_values = vals
+                pool.save()
+                if self._control_method == "array":
+                    self._apply_slider_range()
+
     def _on_method_changed(self) -> None:
         self._control_method = "gamma" if self._gamma_radio.isChecked() else "array"
         self._gamma_combo.setEnabled(self._control_method == "gamma" and not self._initialized)
+        self._bins_spin.setEnabled(self._control_method == "gamma")
+        self._apply_slider_range()
 
     def _init_light(self) -> None:
         gpio_str = self._gpio_combo.currentText()
@@ -157,15 +264,21 @@ class LightControlWindow(QWidget):
         self._update_state()
 
     def _update_state(self) -> None:
+        connected = self.serial_terminal.serial.is_connected()
+        # Buttons are managed here too — Init/Deinit change _initialized and call
+        # _update_state(), so leaving the button enables out of it (as before) left
+        # Deinit permanently disabled after Init.
+        self._init_btn.setEnabled(connected and not self._initialized)
+        self._deinit_btn.setEnabled(connected and self._initialized)
         self._gpio_combo.setEnabled(not self._initialized)
         self._freq_combo.setEnabled(not self._initialized)
         self._gamma_combo.setEnabled(not self._initialized and self._control_method == "gamma")
-        self._power_slider.setEnabled(self._initialized)
+        self._power_slider.setEnabled(connected and self._initialized)
 
     def _on_connection_changed(self) -> None:
-        connected = self.serial_terminal.serial.is_connected()
-        self._init_btn.setEnabled(connected and not self._initialized)
-        self._deinit_btn.setEnabled(connected and self._initialized)
+        if not self.serial_terminal.serial.is_connected():
+            self._initialized = False   # firmware lost the light config
+        self._update_state()
 
     def increase_power(self) -> None:
         if self._initialized:
@@ -192,16 +305,18 @@ class LightControlWindow(QWidget):
         self._gamma_str = self._cfg.gamma
         self._control_method = self._cfg.control_method
         self._power_values = self._cfg.power_values
+        self._bins = int(getattr(self._cfg, "bins", 64) or 64)
         self._current_gamma = float(self._gamma_str)
 
         self._gpio_combo.setCurrentText(self._gpio)
         self._freq_combo.setCurrentText(self._freq)
         self._gamma_combo.setCurrentText(self._gamma_str)
+        self._bins_spin.setValue(self._bins)
         if self._control_method == "gamma":
             self._gamma_radio.setChecked(True)
         else:
             self._array_radio.setChecked(True)
-        self._power_slider.setRange(0, len(self._power_values) - 1)
+        self._apply_slider_range()
         self._power_slider.set_value_silent(0)
 
     def _save_config(self) -> None:
@@ -210,6 +325,7 @@ class LightControlWindow(QWidget):
         self._cfg.gamma = self._gamma_combo.currentText()
         self._cfg.control_method = self._control_method
         self._cfg.power_values = self._power_values
+        self._cfg.bins = self._bins
         pool.save()
 
     def closeEvent(self, event) -> None:

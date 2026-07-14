@@ -9,10 +9,18 @@ GPIO = NewType("GPIO", int)
 class ESP32S3:
     """ESP32-S3 hardware specifications and GPIO definitions."""
 
-    # ESP32-S3 has GPIO 0-21, 26-48 available for general use
+    # ESP32-S3 has GPIO 0-21, 26-48 available for general use (22-25 don't exist)
     AVAILABLE_GPIO_PINS: list[GPIO] = [GPIO(i) for i in range(22)] + [
         GPIO(i) for i in range(26, 49)
     ]
+
+    # All pins 0-48 for display purposes; 22-25 are physically absent on ESP32-S3
+    DISPLAY_GPIO_PINS: list[GPIO] = [GPIO(i) for i in range(49)]
+    GPIO_UNAVAILABLE_PINS: set[GPIO] = {GPIO(i) for i in range(22, 26)}
+
+    @classmethod
+    def is_gpio_unavailable(cls, gpio: GPIO) -> bool:
+        return gpio in cls.GPIO_UNAVAILABLE_PINS
 
     # Special pins with warnings about their intended usage
     GPIO_RESERVED_PINS: dict[GPIO, str] = {
@@ -36,6 +44,10 @@ class ESP32S3:
         GPIO(35): "SPIIO6 - Connected to octal flash/PSRAM",
         GPIO(36): "SPIIO7 - Connected to octal flash/PSRAM",
         GPIO(37): "SPIDQS - Connected to octal flash/PSRAM",
+        GPIO(22): "Not present — GPIO 22-25 do not exist on ESP32-S3",
+        GPIO(23): "Not present — GPIO 22-25 do not exist on ESP32-S3",
+        GPIO(24): "Not present — GPIO 22-25 do not exist on ESP32-S3",
+        GPIO(25): "Not present — GPIO 22-25 do not exist on ESP32-S3",
     }
 
     @classmethod

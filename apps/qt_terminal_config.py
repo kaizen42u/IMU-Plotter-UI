@@ -7,13 +7,13 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QPushButton,
-    QSpinBox,
     QComboBox,
     QVBoxLayout,
     QWidget,
 )
 
 from config_store import pool
+from qt_spinbox import HSpinBox
 from qt_terminal import _FONT_PREFERENCES
 
 
@@ -48,7 +48,7 @@ class TerminalConfigWindow(QWidget):
         self._font_combo.addItems(_available_mono_fonts())
         font_form.addRow("Family:", self._font_combo)
 
-        self._font_size = QSpinBox()
+        self._font_size = HSpinBox()
         self._font_size.setRange(6, 32)
         self._font_size.setSuffix(" pt")
         font_form.addRow("Size:", self._font_size)
@@ -60,7 +60,7 @@ class TerminalConfigWindow(QWidget):
         disp_form = QFormLayout(disp_box)
         disp_form.setHorizontalSpacing(10)
 
-        self._max_lines = QSpinBox()
+        self._max_lines = HSpinBox()
         self._max_lines.setRange(100, 10000)
         self._max_lines.setSingleStep(100)
         self._max_lines.setSuffix(" lines")

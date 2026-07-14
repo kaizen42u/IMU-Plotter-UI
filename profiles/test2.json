@@ -1,5 +1,47 @@
 {
-  "control_pad": {},
+  "control_pad": {
+    "esc_source": "bdshot",
+    "forward": [
+      0.01,
+      0.01,
+      0.01
+    ],
+    "backward": [
+      -0.01,
+      -0.01,
+      -0.01
+    ],
+    "rotate_left": [
+      0.0,
+      0.0,
+      0.01
+    ],
+    "rotate_right": [
+      0.0,
+      0.0,
+      -0.01
+    ],
+    "up": [
+      0.01,
+      0.0,
+      0.0
+    ],
+    "down": [
+      -0.01,
+      0.0,
+      0.0
+    ],
+    "roll_left": [
+      0.0,
+      0.01,
+      0.0
+    ],
+    "roll_right": [
+      0.0,
+      -0.01,
+      0.0
+    ]
+  },
   "serial": {
     "port": "/dev/ttyACM0",
     "baudrate": 921600,
@@ -13,11 +55,13 @@
     "stopbits": "1",
     "flow_control": "None",
     "font_family": "JetBrains Mono",
-    "font_size": 11
+    "font_size": 11,
+    "auto_connect": true,
+    "local_echo": false
   },
   "ledc": {
     "timer0": {
-      "hz": 44101
+      "hz": 47990
     },
     "timer1": {
       "hz": 5000
@@ -30,8 +74,8 @@
     },
     "channel0": {
       "timer": 1,
-      "gpio": 14,
-      "duty": 179
+      "gpio": 1,
+      "duty": 0
     },
     "channel1": {
       "timer": 1,
@@ -74,10 +118,10 @@
     "calibration_scans": 3
   },
   "light": {
-    "gpio": "GPIO14",
-    "frequency": "44100Hz",
+    "gpio": "GPIO1",
+    "frequency": "48000Hz",
     "gamma": "2.3",
-    "control_method": "gamma",
+    "control_method": "array",
     "power_values": [
       0,
       5,
@@ -86,7 +130,271 @@
       80,
       140,
       200,
-      256
-    ]
+      255
+    ],
+    "bins": 8
+  },
+  "dshot": {
+    "num_devices": 4,
+    "device1": {
+      "gpio": "GPIO9",
+      "rate": "600",
+      "inverted": false,
+      "bidi": true
+    },
+    "device2": {
+      "gpio": "GPIO10",
+      "rate": "600",
+      "inverted": false,
+      "bidi": true
+    },
+    "device3": {
+      "gpio": "GPIO11",
+      "rate": "600",
+      "inverted": false,
+      "bidi": true
+    },
+    "device4": {
+      "gpio": "GPIO12",
+      "rate": "600",
+      "inverted": false,
+      "bidi": true
+    },
+    "device5": {
+      "gpio": "GPIO14",
+      "rate": "600",
+      "inverted": false
+    },
+    "device6": {
+      "gpio": "GPIO14",
+      "rate": "600",
+      "inverted": false
+    },
+    "device7": {
+      "gpio": "GPIO14",
+      "rate": "600",
+      "inverted": false
+    },
+    "device8": {
+      "gpio": "GPIO14",
+      "rate": "600",
+      "inverted": false
+    }
+  },
+  "bno085": {
+    "tx_gpio": "GPIO6",
+    "rx_gpio": "GPIO8"
+  },
+  "imu": {},
+  "mpu6050": {
+    "sda_gpio": "GPIO37",
+    "scl_gpio": "GPIO36"
+  },
+  "vc288": {
+    "gpio": "GPIO13",
+    "voltage_slope": 1.0,
+    "voltage_offset": 0.0,
+    "voltage_x2": 0.0,
+    "current_slope": 1.0,
+    "current_offset": 0.0,
+    "current_x2": 0.0
+  },
+  "gpio": {
+    "cols": 10
+  },
+  "sdm": {
+    "ch1": {
+      "gpio": 14,
+      "rate": 80000000,
+      "density": 0
+    },
+    "ch2": {
+      "gpio": 0,
+      "rate": 80000000,
+      "density": 0
+    },
+    "ch3": {
+      "gpio": 0,
+      "rate": 80000000,
+      "density": 0
+    },
+    "ch4": {
+      "gpio": 0,
+      "rate": 80000000,
+      "density": 0
+    },
+    "ch5": {
+      "gpio": 0,
+      "rate": 80000000,
+      "density": 0
+    },
+    "ch6": {
+      "gpio": 0,
+      "rate": 80000000,
+      "density": 0
+    },
+    "ch7": {
+      "gpio": 14,
+      "rate": 312500,
+      "density": 0
+    },
+    "ch8": {
+      "gpio": 0,
+      "rate": 80000000,
+      "density": 0
+    }
+  },
+  "esc": {
+    "num_escs": 1,
+    "frequency": "300Hz",
+    "esc1": {
+      "gpio": "9",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ],
+      "selected": true
+    },
+    "esc2": {
+      "gpio": "10",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ],
+      "selected": true
+    },
+    "esc3": {
+      "gpio": "11",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ],
+      "selected": true
+    },
+    "esc4": {
+      "gpio": "12",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ],
+      "selected": true
+    },
+    "esc5": {
+      "gpio": "13",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ],
+      "selected": true
+    },
+    "esc6": {
+      "gpio": "14",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ],
+      "selected": true
+    },
+    "esc7": {
+      "gpio": "15",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ],
+      "selected": true
+    },
+    "esc8": {
+      "gpio": "16",
+      "direction": "Normal",
+      "calibration": [
+        1000,
+        1500,
+        1500,
+        1500,
+        2000
+      ],
+      "selected": true
+    }
+  },
+  "am32": {
+    "gpio": "11",
+    "baud": "19200"
+  },
+  "imu_plotter2": {
+    "source": "bno085"
+  },
+  "imu2_accel_graph": {
+    "auto_y": true,
+    "ylim": 16,
+    "span_ms": 3000
+  },
+  "imu2_euler_graph": {
+    "auto_y": true,
+    "ylim": 150,
+    "span_ms": 3000
+  },
+  "ina228": {
+    "device_id": "1",
+    "sda_gpio": "GPIO4",
+    "scl_gpio": "GPIO5",
+    "shunt_mohm": "2.0",
+    "i2c_addr": "64",
+    "max_current_a": "10.0",
+    "adc_range": "1"
+  },
+  "bdshot": {
+    "num_devices": 3,
+    "device1": {
+      "gpio": "GPIO9",
+      "rate": "600",
+      "bidi": true,
+      "inverted": false
+    },
+    "device2": {
+      "gpio": "GPIO10",
+      "rate": "300",
+      "bidi": true,
+      "inverted": false
+    },
+    "device3": {
+      "gpio": "GPIO11",
+      "rate": "600",
+      "bidi": true,
+      "inverted": false
+    },
+    "device4": {
+      "gpio": "GPIO12",
+      "rate": "600",
+      "bidi": true,
+      "inverted": false
+    }
   }
 }

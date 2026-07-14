@@ -125,15 +125,25 @@ class COMPortWindow(QWidget):
 
         root.addWidget(params_box)
 
-        # ── Reconnect ─────────────────────────────────────────────────
-        reconnect_box = QGroupBox("Reconnect")
+        # ── Startup & Reconnect ───────────────────────────────────────
+        reconnect_box = QGroupBox("Startup & Reconnect")
         reconnect_lay = QVBoxLayout(reconnect_box)
+
+        self._auto_connect_cb = QCheckBox("Auto-connect on startup")
+        self._auto_connect_cb.setToolTip(
+            "If the configured port is available when the app starts, connect automatically."
+        )
+        self._auto_connect_cb.setChecked(self._cfg.auto_connect or False)
+        self._auto_connect_cb.toggled.connect(self._on_auto_connect_toggled)
+        reconnect_lay.addWidget(self._auto_connect_cb)
+
         self._reconnect_cb = QCheckBox("Auto-reconnect on disconnect")
         reconnect_default = self._cfg.auto_reconnect or False
         self._st._reconnect_enabled = reconnect_default
         self._reconnect_cb.setChecked(reconnect_default)
         self._reconnect_cb.toggled.connect(self._on_reconnect_toggled)
         reconnect_lay.addWidget(self._reconnect_cb)
+
         root.addWidget(reconnect_box)
 
         root.addStretch()
@@ -189,6 +199,10 @@ class COMPortWindow(QWidget):
             return
         self._st._baud_combo.setCurrentText(text)
 
+    def _on_auto_connect_toggled(self, checked: bool) -> None:
+        self._cfg.auto_connect = checked
+        pool.save()
+
     def _on_reconnect_toggled(self, checked: bool) -> None:
         self._st._reconnect_enabled = checked
         self._cfg.auto_reconnect = checked
@@ -233,6 +247,9 @@ class COMPortWindow(QWidget):
         self._reconnect_cb.blockSignals(True)
         self._reconnect_cb.setChecked(reconnect)
         self._reconnect_cb.blockSignals(False)
+        self._auto_connect_cb.blockSignals(True)
+        self._auto_connect_cb.setChecked(self._cfg.auto_connect or False)
+        self._auto_connect_cb.blockSignals(False)
 
     def _save_config(self) -> None:
         try:

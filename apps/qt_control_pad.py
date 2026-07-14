@@ -7,17 +7,18 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
-    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
 
 from config_store import pool
+from qt_spinbox import HDoubleSpinBox
 
 _cfg = pool.section("control_pad")
 
@@ -44,14 +45,20 @@ class ControlPadWindow(QWidget):
         serial_terminal,
         light_control_app=None,
         esc_control_app=None,
+        dshot_app=None,
+        bdshot_app=None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Control Pad")
         self.serial_terminal = serial_terminal
         self.light_control_app = light_control_app
-        self.esc_control_app = esc_control_app
+        self.esc_control_app = esc_control_app   # PWM ESC backend
+        self.dshot_app = dshot_app               # DShot backend
+        self.bdshot_app = bdshot_app             # bidirectional DShot backend
         self._custom_power: dict[str, list[float]] = {}
+        # Which backend the pad drives: "pwm", "dshot", or "bdshot".
+        self._esc_source: str = getattr(_cfg, "esc_source", None) or "pwm"
 
         self._build_ui()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -59,7 +66,31 @@ class ControlPadWindow(QWidget):
 
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
-        root = QHBoxLayout(self)
+        root = QVBoxLayout(self)
+
+        # --- ESC output selector ---
+        src_box = QGroupBox("ESC Output")
+        src_row = QHBoxLayout(src_box)
+        self._pwm_radio = QRadioButton("PWM ESC")
+        self._dshot_radio = QRadioButton("DShot")
+        self._bdshot_radio = QRadioButton("bDShot")
+        self._src_radios = {
+            "pwm": self._pwm_radio,
+            "dshot": self._dshot_radio,
+            "bdshot": self._bdshot_radio,
+        }
+        self._src_radios.get(self._esc_source, self._pwm_radio).setChecked(True)
+        for rb in self._src_radios.values():
+            rb.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # keep WASD keys on the pad
+            rb.toggled.connect(self._on_source_changed)
+            src_row.addWidget(rb)
+        src_row.addStretch()
+        self._src_status = QLabel("")
+        self._src_status.setStyleSheet("color:#888; font-size:11px;")
+        src_row.addWidget(self._src_status)
+        root.addWidget(src_box)
+
+        clusters = QHBoxLayout()
 
         # --- Movement cluster ---
         move_box = QGroupBox("Movement")
@@ -93,7 +124,7 @@ class ControlPadWindow(QWidget):
         move_grid.place(2, 1, self._bwd_btn)
 
         move_box.setLayout(move_grid)
-        root.addWidget(move_box)
+        clusters.addWidget(move_box)
 
         # --- Rotation cluster ---
         rot_box = QGroupBox("Rotation")
@@ -101,10 +132,14 @@ class ControlPadWindow(QWidget):
 
         self._up_btn = _styled_btn("Up", "vertical")
         self._up_btn.clicked.connect(self._esc_up)
+        self._up_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._up_btn.customContextMenuRequested.connect(lambda: self._show_editor("up"))
         rot_grid.place(0, 1, self._up_btn)
 
         self._roll_left_btn = _styled_btn("Roll\nLeft", "rotation")
         self._roll_left_btn.clicked.connect(self._esc_roll_left)
+        self._roll_left_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._roll_left_btn.customContextMenuRequested.connect(lambda: self._show_editor("roll_left"))
         rot_grid.place(1, 0, self._roll_left_btn)
 
         self._stop2_btn = _styled_btn("Stop", "stop")
@@ -113,14 +148,18 @@ class ControlPadWindow(QWidget):
 
         self._roll_right_btn = _styled_btn("Roll\nRight", "rotation")
         self._roll_right_btn.clicked.connect(self._esc_roll_right)
+        self._roll_right_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._roll_right_btn.customContextMenuRequested.connect(lambda: self._show_editor("roll_right"))
         rot_grid.place(1, 2, self._roll_right_btn)
 
         self._down_btn = _styled_btn("Down", "vertical")
         self._down_btn.clicked.connect(self._esc_down)
+        self._down_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._down_btn.customContextMenuRequested.connect(lambda: self._show_editor("down"))
         rot_grid.place(2, 1, self._down_btn)
 
         rot_box.setLayout(rot_grid)
-        root.addWidget(rot_box)
+        clusters.addWidget(rot_box)
 
         # --- Light cluster ---
         light_box = QGroupBox("Light")
@@ -132,8 +171,10 @@ class ControlPadWindow(QWidget):
         light_layout.addWidget(self._light_up_btn)
         light_layout.addWidget(self._light_dn_btn)
         light_layout.addStretch()
-        root.addWidget(light_box)
+        clusters.addWidget(light_box)
 
+        root.addLayout(clusters)
+        self._update_src_status()
         self.adjustSize()
 
     # ------------------------------------------------------------------
@@ -208,16 +249,41 @@ class ControlPadWindow(QWidget):
     def _esc_roll_right(self) -> None:
         self._send_power("roll_right", [-0.425, 0.6, 0.0, 0.0])
 
+    def _active_esc_app(self):
+        return {
+            "pwm":    self.esc_control_app,
+            "dshot":  self.dshot_app,
+            "bdshot": self.bdshot_app,
+        }.get(self._esc_source)
+
+    def _on_source_changed(self) -> None:
+        for name, rb in self._src_radios.items():
+            if rb.isChecked():
+                self._esc_source = name
+                break
+        _cfg.esc_source = self._esc_source
+        pool.save()
+        self._update_src_status()
+
+    def _update_src_status(self) -> None:
+        app = self._active_esc_app()
+        if app is None:
+            self._src_status.setText("(backend window not open)")
+        else:
+            self._src_status.setText(f"{app.num_escs} ESC(s)")
+
     def _stop_escs(self) -> None:
-        if self.esc_control_app:
-            n = self.esc_control_app.num_escs
+        app = self._active_esc_app()
+        if app:
+            n = app.num_escs
             levels = self._custom_power.get("stop") or getattr(_cfg, "stop", None) or [0.0] * n
-            self.esc_control_app.send_all_esc_power(levels)
+            app.send_all_esc_power(levels)
 
     def _send_power(self, action: str, default: list[float]) -> None:
-        if self.esc_control_app:
+        app = self._active_esc_app()
+        if app:
             levels = self._custom_power.get(action) or getattr(_cfg, action, None) or default
-            self.esc_control_app.send_all_esc_power(levels)
+            app.send_all_esc_power(levels)
 
     def _increase_light(self) -> None:
         if self.light_control_app:
@@ -232,9 +298,10 @@ class ControlPadWindow(QWidget):
     # ------------------------------------------------------------------
 
     def _show_editor(self, action: str) -> None:
-        if not self.esc_control_app:
+        app = self._active_esc_app()
+        if not app:
             return
-        n = self.esc_control_app.num_escs
+        n = app.num_escs
         current = (self._custom_power.get(action) or getattr(_cfg, action, None) or [0.0]*n)[:n]
         while len(current) < n:
             current.append(0.0)
@@ -245,12 +312,12 @@ class ControlPadWindow(QWidget):
         layout.addWidget(QLabel(f"ESC Power Levels (-1.0 to 1.0)"))
 
         form = QFormLayout()
-        spinboxes: list[QDoubleSpinBox] = []
+        spinboxes: list[HDoubleSpinBox] = []
         for i, val in enumerate(current):
-            sb = QDoubleSpinBox()
+            sb = HDoubleSpinBox()
             sb.setRange(-1.0, 1.0)
-            sb.setSingleStep(0.05)
-            sb.setDecimals(2)
+            sb.setSingleStep(0.01)
+            sb.setDecimals(3)  # DShot resolves finer than PWM; allow 3-dp input
             sb.setValue(val)
             spinboxes.append(sb)
             form.addRow(f"ESC {i+1}:", sb)
@@ -276,6 +343,15 @@ class ControlPadWindow(QWidget):
 
     def set_esc_control_app(self, app) -> None:
         self.esc_control_app = app
+        self._update_src_status()
+
+    def set_dshot_app(self, app) -> None:
+        self.dshot_app = app
+        self._update_src_status()
+
+    def set_bdshot_app(self, app) -> None:
+        self.bdshot_app = app
+        self._update_src_status()
 
     def closeEvent(self, event) -> None:
         self._save_custom_power()

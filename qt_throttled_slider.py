@@ -163,7 +163,7 @@ class ThrottledSlider(QWidget):
         return self._slider.maximum()
 
     def setEnabled(self, enabled: bool) -> None:
-        self._slider.setEnabled(enabled)
+        super().setEnabled(enabled)   # propagates to children; preserves widget size
 
     def setMinimumWidth(self, w: int) -> None:
         self._slider.setMinimumWidth(w)

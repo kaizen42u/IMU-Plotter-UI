@@ -235,7 +235,7 @@ class LEDCWindow(QWidget):
         root.addWidget(ch_box)
 
         bar = QHBoxLayout()
-        show_btn = QPushButton("Show (ledc show)")
+        show_btn = QPushButton("Reload")
         show_btn.clicked.connect(self._do_show)
         bar.addWidget(show_btn)
         bar.addStretch()
